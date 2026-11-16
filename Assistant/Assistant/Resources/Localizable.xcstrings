@@ -1,0 +1,868 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ → %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ → %2$@"
+          }
+        }
+      }
+    },
+    "%lld failed" : {
+
+    },
+    "%lld tool calls" : {
+
+    },
+    "%lld–%lld of %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld–%2$lld of %3$lld"
+          }
+        }
+      }
+    },
+    "•" : {
+
+    },
+    "A backup of agent.yaml will be retained. Application images will be rebuilt and workers restarted. Active tasks may be interrupted. The management connection stays available where possible." : {
+
+    },
+    "A fresh conversation" : {
+
+    },
+    "About %@" : {
+
+    },
+    "About this setting" : {
+
+    },
+    "Accepted is not completed. Check uncertain outcomes before submitting again." : {
+
+    },
+    "Additional accounts" : {
+
+    },
+    "Additional accounts (%lld configured)" : {
+
+    },
+    "Advanced" : {
+
+    },
+    "Affected application services will be recreated. Active work may be interrupted." : {
+
+    },
+    "Agent.yaml" : {
+
+    },
+    "Agent.yaml source" : {
+
+    },
+    "All changes saved" : {
+
+    },
+    "All channels" : {
+
+    },
+    "Allow once" : {
+
+    },
+    "Allow this script version" : {
+
+    },
+    "Allowed values" : {
+
+    },
+    "Application services" : {
+
+    },
+    "Apply saved settings" : {
+
+    },
+    "Approvals" : {
+
+    },
+    "Approve" : {
+
+    },
+    "Ask a question, explore an idea, or hand over a task." : {
+
+    },
+    "Assistant" : {
+
+    },
+    "Assistant client" : {
+
+    },
+    "Assistant instructions" : {
+
+    },
+    "Assistant keeps related work organized automatically." : {
+
+    },
+    "Attachment" : {
+
+    },
+    "Audio playback could not start. Download the file to open it in another player." : {
+
+    },
+    "Automatic naming failed" : {
+
+    },
+    "Awaiting more messages to name" : {
+
+    },
+    "Block always" : {
+
+    },
+    "Block once" : {
+
+    },
+    "Browse Assistant’s workspace. Shared files stay separate from chat task deletion." : {
+
+    },
+    "Bulk actions keep the management connection running." : {
+
+    },
+    "Cancel" : {
+
+    },
+    "Cancel task" : {
+
+    },
+    "Channel" : {
+
+    },
+    "Chats" : {
+
+    },
+    "Choose a section on the left." : {
+
+    },
+    "Clear cached conversations from this Mac?" : {
+
+    },
+    "Clear chat cache…" : {
+
+    },
+    "Clear conversation cache…" : {
+
+    },
+    "Clear local cache" : {
+
+    },
+    "Closing a window does not stop the server. Quitting closes this client's SSH tunnel and stops polling." : {
+
+    },
+    "Code" : {
+
+    },
+    "Configuration saved and application services activated." : {
+
+    },
+    "Configured" : {
+
+    },
+    "Confirm" : {
+
+    },
+    "Connect" : {
+
+    },
+    "Connect to an instance first." : {
+
+    },
+    "Connect to Assistant" : {
+
+    },
+    "Connect to Assistant through SSH, or use an installation on this Mac." : {
+
+    },
+    "Connected" : {
+
+    },
+    "Connecting" : {
+
+    },
+    "Connection failed" : {
+
+    },
+    "Connection name" : {
+
+    },
+    "Conversation could not be loaded." : {
+
+    },
+    "Conversations" : {
+
+    },
+    "Conversations and tool details are retained on this Mac until you clear the local cache. Clearing it does not delete server history." : {
+
+    },
+    "Copied" : {
+
+    },
+    "Copy code" : {
+
+    },
+    "Core behavior, in its original source format. Environment overrides still take precedence. Saving changed source keeps the last three backups and rebuilds application images." : {
+
+    },
+    "Create folder" : {
+
+    },
+    "Create folder %@" : {
+
+    },
+    "Danger zone" : {
+
+    },
+    "Data" : {
+
+    },
+    "Data reset completed. Reconnect to continue." : {
+
+    },
+    "Deep research" : {
+
+    },
+    "Default" : {
+
+    },
+    "Delete %@" : {
+
+    },
+    "Delete selected chat task data" : {
+
+    },
+    "Delete task data" : {
+
+    },
+    "Delete task data; preserve conversation and shared files" : {
+
+    },
+    "Delete task data?" : {
+
+    },
+    "Deleted task. Conversation and shared data are preserved. This chat is read-only." : {
+
+    },
+    "Deletion is blocked while related work is active." : {
+
+    },
+    "Deny" : {
+
+    },
+    "Discard and quit" : {
+
+    },
+    "Discard changes" : {
+
+    },
+    "Discard unsaved configuration changes?" : {
+
+    },
+    "Disconnect" : {
+
+    },
+    "Disconnected" : {
+
+    },
+    "Done" : {
+
+    },
+    "Download" : {
+
+    },
+    "Downloaded %@." : {
+
+    },
+    "Downloads are limited to 64 MiB in this client." : {
+
+    },
+    "Earlier tool calls in this conversation are not shown." : {
+
+    },
+    "Earlier updates" : {
+
+    },
+    "editing agent.yaml" : {
+
+    },
+    "Email" : {
+
+    },
+    "Enter a valid SSH alias or user@host and port." : {
+
+    },
+    "Error: %@" : {
+
+    },
+    "Essentials" : {
+
+    },
+    "Failed" : {
+
+    },
+    "File operation completed." : {
+
+    },
+    "Files" : {
+
+    },
+    "Find a setting" : {
+
+    },
+    "Hide tool calls" : {
+
+    },
+    "I understand the setup and isolation warnings" : {
+
+    },
+    "Identifier" : {
+
+    },
+    "Inspect server state before retrying. Request bodies are not saved locally." : {
+
+    },
+    "Installation on this Mac" : {
+
+    },
+    "Instructions" : {
+
+    },
+    "Interrupted" : {
+
+    },
+    "Keep a menu-bar item while Assistant is running" : {
+
+    },
+    "Keep editing" : {
+
+    },
+    "Last poll: %@" : {
+
+    },
+    "Latest" : {
+
+    },
+    "Leave blank to keep the saved value" : {
+
+    },
+    "Load a previous version" : {
+
+    },
+    "Load audio" : {
+
+    },
+    "Load earlier messages" : {
+
+    },
+    "Load older conversations" : {
+
+    },
+    "Loading conversation…" : {
+
+    },
+    "Logs · %@" : {
+
+    },
+    "Make Assistant yours. Fine-tune the rest only when you need to." : {
+
+    },
+    "Management request failed with HTTP %lld. Check authentication, saved configuration, and server health." : {
+
+    },
+    "Message Assistant" : {
+
+    },
+    "Naming workstream…" : {
+
+    },
+    "New chat" : {
+
+    },
+    "New chat (Command-N)" : {
+
+    },
+    "New connection" : {
+
+    },
+    "New folder name" : {
+
+    },
+    "New profile" : {
+
+    },
+    "Next" : {
+
+    },
+    "No" : {
+
+    },
+    "No conversations match." : {
+
+    },
+    "No description is available for this setting." : {
+
+    },
+    "No details were recorded." : {
+
+    },
+    "No messages in this conversation yet." : {
+
+    },
+    "No service statuses were returned." : {
+
+    },
+    "No settings match “%@”." : {
+
+    },
+    "No updates to show." : {
+
+    },
+    "Not checked" : {
+
+    },
+    "Not confirmed — inspect operation history before retrying" : {
+
+    },
+    "Not set" : {
+
+    },
+    "Note" : {
+
+    },
+    "Nothing needs your approval on this page." : {
+
+    },
+    "Notices from your Assistant installation." : {
+
+    },
+    "Operation %@ ended as %@. Inspect current state before retrying." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Operation %1$@ ended as %2$@. Inspect current state before retrying."
+          }
+        }
+      }
+    },
+    "Operation %@ is still pending. Inspect Operations before retrying." : {
+
+    },
+    "Operation history" : {
+
+    },
+    "Organized automatically" : {
+
+    },
+    "Parent folder" : {
+
+    },
+    "Pause" : {
+
+    },
+    "Play" : {
+
+    },
+    "Playback position" : {
+
+    },
+    "Previous" : {
+
+    },
+    "Quit Assistant" : {
+
+    },
+    "Reconnecting" : {
+
+    },
+    "Refresh" : {
+
+    },
+    "Reload" : {
+
+    },
+    "Reply to this conversation" : {
+
+    },
+    "Reset Assistant data" : {
+
+    },
+    "Reset Assistant’s database and task history. This is separate from deleting an individual chat task. Make and verify a server backup first." : {
+
+    },
+    "Reset data" : {
+
+    },
+    "Reset data…" : {
+
+    },
+    "Restart" : {
+
+    },
+    "Restart all" : {
+
+    },
+    "Retry loading conversation" : {
+
+    },
+    "Review" : {
+
+    },
+    "Review approvals" : {
+
+    },
+    "Review changes" : {
+
+    },
+    "Review what Assistant needs before it can continue." : {
+
+    },
+    "Review your changes" : {
+
+    },
+    "Running" : {
+
+    },
+    "Save" : {
+
+    },
+    "Save & Apply" : {
+
+    },
+    "Save and activate reviewed changes" : {
+
+    },
+    "Save and activate reviewed changes?" : {
+
+    },
+    "Save configuration" : {
+
+    },
+    "Save or discard the configuration draft before disconnecting." : {
+
+    },
+    "Save reviewed changes?" : {
+
+    },
+    "Saved connection" : {
+
+    },
+    "Saved connection metadata could not be read: %@" : {
+
+    },
+    "Saved conversations could not be read: %@" : {
+
+    },
+    "Saved. Activate these changes from Server Health when you are ready." : {
+
+    },
+    "Saving or activation may have partial effects. Inspect Server Health and operation history before retrying." : {
+
+    },
+    "Search conversations" : {
+
+    },
+    "Send" : {
+
+    },
+    "Sending" : {
+
+    },
+    "Sending…" : {
+
+    },
+    "Sent — waiting for transcript" : {
+
+    },
+    "Sent externally" : {
+
+    },
+    "Server Health" : {
+
+    },
+    "Server history is preserved. Conversations will be downloaded again when you open Chats." : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings are saved without restarting services. Apply them later from Server Health." : {
+
+    },
+    "Show advanced settings" : {
+
+    },
+    "Show advanced settings for this page" : {
+
+    },
+    "Show Assistant" : {
+
+    },
+    "Show each setting's environment variable name" : {
+
+    },
+    "Show identifiers" : {
+
+    },
+    "Show tool calls" : {
+
+    },
+    "Some deliveries were not acknowledged. They will be offered again." : {
+
+    },
+    "Some operations have unresolved outcomes. Inspect operation history before retrying." : {
+
+    },
+    "Source changes" : {
+
+    },
+    "SSH alias or user@host" : {
+
+    },
+    "SSH and the launcher work, but the management service is stopped. Start the server with assistant server start." : {
+
+    },
+    "SSH connected, but ~/.local/bin/assistant is missing on the server. Install the Assistant server launcher for this SSH account." : {
+
+    },
+    "SSH connected, but this account cannot execute ~/.local/bin/assistant. Check the installed launcher's permissions." : {
+
+    },
+    "SSH could not reach this host and port. Check the server, network, and SSH port." : {
+
+    },
+    "SSH could not resolve this host. Check the destination or SSH configuration alias." : {
+
+    },
+    "SSH did not become ready in time. Check server reachability and authentication." : {
+
+    },
+    "SSH discovery failed. Verify the host key and key/agent authentication in Terminal, then check the installed launcher and Docker access." : {
+
+    },
+    "SSH does not trust this host yet. Verify its fingerprint and establish host trust in Terminal before reconnecting." : {
+
+    },
+    "SSH has no route to this server. For a local-network server, allow Assistant in System Settings > Privacy & Security > Local Network, then reconnect. Also check the server address and network route." : {
+
+    },
+    "SSH key/agent authentication failed. Terminal may be using a password or prompting to unlock a key; this client cannot answer those prompts. Configure key authentication and load the key into your SSH agent." : {
+
+    },
+    "SSH port" : {
+
+    },
+    "SSH uses your macOS SSH configuration and agent. API tokens are kept only in session memory." : {
+
+    },
+    "Start" : {
+
+    },
+    "Stop" : {
+
+    },
+    "Stop application" : {
+
+    },
+    "Submission details" : {
+
+    },
+    "Submission outcome is unresolved. Inspect server operations before resubmitting. %@" : {
+
+    },
+    "Submission outcome unknown" : {
+
+    },
+    "Succeeded" : {
+
+    },
+    "Technical request details" : {
+
+    },
+    "Telegram" : {
+
+    },
+    "The client selected an invalid API resource." : {
+
+    },
+    "The connection launcher exited with status %d. Run ~/.local/bin/assistant connect on the server to inspect its error; do not share the credential handoff." : {
+
+    },
+    "The connection to the server was interrupted. Reconnecting may help." : {
+
+    },
+    "the conversation list" : {
+
+    },
+    "The conversation, attachments, and workstream are kept. Execution details are removed and replaced with a read-only deletion marker." : {
+
+    },
+    "The downloaded content did not match its server digest. No file was saved." : {
+
+    },
+    "The installed launcher cannot access Docker. Start Docker and grant the SSH account access to the selected local Docker daemon." : {
+
+    },
+    "The installed launcher cannot find Docker. Ensure Docker with Compose is available in the server's noninteractive SSH environment." : {
+
+    },
+    "The installed launcher returned an invalid connection handoff." : {
+
+    },
+    "The response exceeded the client display limit." : {
+
+    },
+    "The server is busy with another management task. Try again in a moment." : {
+
+    },
+    "The server is older than this app and does not support %@. Update the server, then reconnect: run `./run.sh server start` (or `assistant server start`) on the server." : {
+
+    },
+    "The server rejected this session's credentials. Reconnect to continue." : {
+
+    },
+    "The server returned an incompatible response." : {
+
+    },
+    "The server took too long to respond. It may be busy; try again shortly." : {
+
+    },
+    "The server's SSH host key has changed. Verify the server's identity in Terminal; this client will not bypass host-key checking." : {
+
+    },
+    "The standing principles and guidance Assistant follows in every task." : {
+
+    },
+    "These changes have not been saved to the server." : {
+
+    },
+    "This attachment is no longer available for download." : {
+
+    },
+    "This audio format cannot be played. Download the file to open it in another player." : {
+
+    },
+    "This call stopped without a recorded result." : {
+
+    },
+    "This changes server data or may interrupt active work. An interrupted operation can have partial effects. Inspect its outcome before trying again." : {
+
+    },
+    "This folder is empty." : {
+
+    },
+    "This image format cannot be displayed. Download the file to open it in another app." : {
+
+    },
+    "This Mac" : {
+
+    },
+    "This profile reached a different installation. Verify the server before creating a new profile." : {
+
+    },
+    "This removes database history and resets application data. Configuration is retained and mailbox position is preserved. This cannot be undone by this client." : {
+
+    },
+    "This response could not be formatted." : {
+
+    },
+    "This review includes decisions that require a newer client." : {
+
+    },
+    "This server does not support writable Management API v2." : {
+
+    },
+    "To: %@" : {
+
+    },
+    "Tool calls" : {
+
+    },
+    "Type RESET to continue" : {
+
+    },
+    "Unknown" : {
+
+    },
+    "Unsaved changes" : {
+
+    },
+    "Untitled conversation" : {
+
+    },
+    "Update the server to enable combined save and activation." : {
+
+    },
+    "Updated %@ · Health checks do not verify model or integration outcomes." : {
+
+    },
+    "Updates" : {
+
+    },
+    "Upload %@" : {
+
+    },
+    "Upload file" : {
+
+    },
+    "Uploads are limited to 1 MiB per file in this client." : {
+
+    },
+    "Uptime not reported by this server" : {
+
+    },
+    "Verify this destination with ssh in Terminal first. Unknown or changed host keys and interactive password prompts are not accepted." : {
+
+    },
+    "View image" : {
+
+    },
+    "View logs" : {
+
+    },
+    "What shall we work on?" : {
+
+    },
+    "Working…" : {
+
+    },
+    "Workspace files" : {
+
+    },
+    "Yes" : {
+
+    },
+    "You" : {
+
+    },
+    "Your conversations will appear here." : {
+
+    },
+    "Your installation at a glance. Check services, inspect logs, and restart deliberately." : {
+
+    },
+    "Your platform. One connection." : {
+
+    }
+  },
+  "version" : "1.0"
+}

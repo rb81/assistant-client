@@ -1,0 +1,97 @@
+import Foundation
+
+/// One destination in the Settings sidebar.
+enum SettingsPage: Hashable {
+    case group(String)
+    case instructions
+    case agentYaml
+}
+
+/// Fields that share a heading within a settings page, plus any extra accounts filed under it.
+struct SettingsSection: Identifiable {
+    let title: String?
+    let fields: [SettingField]
+    let accounts: [SettingGroup]
+    var id: String { title ?? "" }
+}
+
+/// Turns the server's flat settings list and group metadata into pages, sections, and search results.
+struct SettingsNavigation {
+    let groups: [SettingGroup]
+    private let fieldsByGroup: [String: [SettingField]]
+
+    init(_ configuration: FullConfiguration) {
+        fieldsByGroup = Dictionary(grouping: configuration.settings, by: \.group)
+        groups = configuration.groups ?? Self.fallbackGroups(configuration.settings)
+    }
+
+    /// Everyday pages, in the server's order.
+    var essentials: [SettingGroup] { groups.filter { $0.parent == nil && $0.basic } }
+
+    /// Tuning pages, alphabetical because the list is long and rarely browsed in order.
+    var advanced: [SettingGroup] {
+        groups.filter { $0.parent == nil && !$0.basic }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
+    func group(_ id: String) -> SettingGroup? { groups.first { $0.id == id } }
+
+    func fields(in group: String) -> [SettingField] { fieldsByGroup[group] ?? [] }
+
+    /// The page's own fields split by section; extra accounts attach to the section they belong to.
+    func sections(in group: String) -> [SettingsSection] {
+        let fields = fields(in: group)
+        let accounts = groups.filter { $0.parent == group && $0.section != nil }
+        var order: [String?] = []
+        for field in fields where !order.contains(field.section) { order.append(field.section) }
+        for account in accounts where !order.contains(account.section) { order.append(account.section) }
+        return order.map { title in
+            SettingsSection(title: title, fields: fields.filter { $0.section == title },
+                            accounts: accounts.filter { $0.section == title })
+        }
+    }
+
+    /// Nested groups shown as their own panels below the page's fields.
+    func subgroups(of group: String, includeAdvanced: Bool) -> [SettingGroup] {
+        groups.filter { $0.parent == group && $0.section == nil && (includeAdvanced || $0.basic) }
+    }
+
+    /// Search covers every label, identifier, and explanation regardless of the advanced toggle.
+    func search(_ text: String) -> [(group: SettingGroup, fields: [SettingField])] {
+        let query = text.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return [] }
+        return groups.compactMap { group in
+            let matches = fields(in: group.id).filter {
+                $0.label.localizedCaseInsensitiveContains(query) || $0.key.localizedCaseInsensitiveContains(query)
+                    || ($0.help?.localizedCaseInsensitiveContains(query) ?? false)
+            }
+            return matches.isEmpty ? nil : (group, matches)
+        }
+    }
+
+    /// Breadcrumb such as "Calendar › Google calendar 2" for search results.
+    func path(_ group: SettingGroup) -> String {
+        guard let parent = group.parent.flatMap(self.group) else { return group.title }
+        return "\(parent.title) › \(group.title)"
+    }
+
+    /// Whether an extra account has any saved value, so configured accounts stand out when collapsed.
+    func configured(_ group: SettingGroup) -> Bool {
+        fields(in: group.id).contains { !$0.value.isEmpty }
+    }
+
+    /// Older servers send no group metadata; derive flat top-level pages from field groups.
+    private static func fallbackGroups(_ settings: [SettingField]) -> [SettingGroup] {
+        let essentials: Set = ["identity", "models", "email", "telegram", "calendar", "zoom", "dropbox",
+                               "transcription", "security", "embeddings"]
+        var seen: [String] = []
+        for field in settings where !seen.contains(field.group) { seen.append(field.group) }
+        return seen.map { id in
+            let title = id.replacingOccurrences(of: "advanced:", with: "")
+                .replacingOccurrences(of: "catalog:", with: "")
+                .replacingOccurrences(of: "_", with: " ").capitalized
+            return SettingGroup(id: id, title: title, help: nil, parent: nil, section: nil,
+                                basic: essentials.contains(id))
+        }
+    }
+}

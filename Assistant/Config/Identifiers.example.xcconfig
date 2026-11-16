@@ -1,0 +1,7 @@
+// Copy to Identifiers.xcconfig and select Base.xcconfig in Xcode for local signing.
+PRODUCT_BUNDLE_IDENTIFIER = com.example.Assistant
+DEVELOPMENT_TEAM =
+// Development builds do not require a Developer ID certificate.
+CODE_SIGNING_ALLOWED = YES
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Manual

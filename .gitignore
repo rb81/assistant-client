@@ -1,0 +1,23 @@
+# Working Xcode projects and signing identifiers stay local.
+*.xcodeproj/
+Identifiers.xcconfig
+*.entitlements.local
+*.p12
+*.mobileprovision
+*.provisionprofile
+
+# Xcode state and build output.
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.build/
+build/
+*.xcarchive/
+*.dSYM/
+
+# Local configuration and OS metadata.
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log

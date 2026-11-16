@@ -1,0 +1,2 @@
+// Local signing values are intentionally absent from the source repository.
+#include? "Identifiers.xcconfig"
