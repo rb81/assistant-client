@@ -9,6 +9,7 @@ struct InboxView: View {
     @State private var scrollState = TranscriptScrollState()
     @State private var loadingEarlier = false
     @AppStorage("chats.showToolCalls") private var showToolCalls = true
+    @Environment(\.scenePhase) private var scenePhase
 
     private var chat: ConversationModel { model.chats }
 
@@ -26,8 +27,11 @@ struct InboxView: View {
 
     /// Late inbox offers must retrigger acknowledgment even when the transcript is unchanged.
     private struct DeliveryRender: Hashable {
+        let thread: String?
+        let version: String?
         let offered: [Int]
         let rendered: [String]
+        let active: Bool
     }
 
     /// Tail content, not just row counts, changes as tools finish or replies are updated in place.
@@ -62,9 +66,9 @@ struct InboxView: View {
                 composer
             }.frame(minWidth: 420)
         }
-        .task {
+        .task(id: model.messages.last?.id) {
             // Returning to Chats shows the list already in memory instead of reloading it straight away.
-            if chat.listIsFresh {
+            if chat.listIsFresh && model.messages.isEmpty {
                 do { try await Task.sleep(for: ConversationModel.listRefresh) } catch { return }
             }
             while !Task.isCancelled {
@@ -129,7 +133,8 @@ struct InboxView: View {
                     }
                     ForEach(chat.conversations) { conversation in
                         ConversationRow(conversation: conversation,
-                                        selected: chat.selectedThread == conversation.threadID) {
+                                        selected: chat.selectedThread == conversation.threadID,
+                                        unread: chat.isUnread(conversation)) {
                             chat.select(conversation)
                         }
                         .disabled(chat.sending)
@@ -233,7 +238,10 @@ struct InboxView: View {
                     }
                 }
             }
-            .task(id: DeliveryRender(offered: model.offeredIDs, rendered: chat.messages.map(\.id))) {
+            .task(id: DeliveryRender(thread: chat.selectedThread, version: chat.renderedVersion,
+                                     offered: model.offeredIDs, rendered: chat.messages.map(\.id),
+                                     active: scenePhase == .active)) {
+                if scenePhase == .active { chat.markRendered() }
                 let rendered = Set(chat.messages.filter { $0.channel == "client" && !$0.incoming }.map(\.wireID))
                 await model.acknowledgeRendered(ids: model.offeredIDs.filter(rendered.contains))
             }
@@ -478,12 +486,20 @@ struct InboxView: View {
 private struct ConversationRow: View {
     let conversation: Conversation
     let selected: Bool
+    let unread: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(conversation.title).font(.system(.body, weight: .medium)).lineLimit(2)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(conversation.title).font(.system(.body, weight: unread ? .bold : .medium)).lineLimit(2)
+                    Spacer(minLength: 0)
+                    if unread {
+                        Image(systemName: "circle.fill").font(.system(size: 7))
+                            .foregroundStyle(Theme.accent).accessibilityLabel("Unread")
+                    }
+                }
                 HStack(spacing: 6) {
                     Image(systemName: conversation.deleted ? "trash" : conversation.active ? "circle.dotted" : "bubble.left")
                     Text(Conversation.channelTitle(conversation.channel))

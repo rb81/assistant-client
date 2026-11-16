@@ -10,6 +10,10 @@ actor ChatAPI: ManagementAPI {
     private var requests: [(Int, String)] = []
     private var pausedReads = Set<String>()
     private var readWaiters: [String: CheckedContinuation<Void, Never>] = [:]
+    private var conversationRows: [Conversation]?
+
+    /// List updates model remote activity and unsorted merged pages.
+    func setConversations(_ rows: [Conversation]) { conversationRows = rows }
 
     /// Named read gates make overlapping refreshes deterministic without network timing assumptions.
     func pauseNextRead(_ prefix: String) { pausedReads.insert(prefix) }
@@ -45,11 +49,20 @@ actor ChatAPI: ManagementAPI {
             """.utf8)
         }
         if resource.hasPrefix("conversations?") {
+            if let conversationRows {
+                return try JSONEncoder().encode(JSONValue.object([
+                    "rows": try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(conversationRows)),
+                    "total": .integer(Int64(conversationRows.count))
+                ]))
+            }
             return Data("""
             {"rows":[{"thread_id":"chat-thread","channel":"client","message_count":2,"opening_message":"Chat",
             "last_activity_at":"2026-11-16T10:00:00Z","latest_task_id":7,"latest_task_status":"completed",
             "latest_task_summary":"Chat","workstream_title":null}],"total":1}
             """.utf8)
+        }
+        if resource == "services?details=true" {
+            return Data(#"{"services":[{"id":"task-agent","title":"Task worker","state":"running","health":"healthy"}]}"#.utf8)
         }
         if resource.hasPrefix("tasks/7/activity") {
             return Data(#"{"rows":[],"total":0,"truncated":false}"#.utf8)

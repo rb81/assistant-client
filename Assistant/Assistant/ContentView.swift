@@ -46,21 +46,24 @@ struct ContentView: View {
             .navigationSplitViewColumnWidth(min: Theme.sidebarMinimum, ideal: Theme.sidebarIdeal, max: Theme.sidebarMaximum)
             .disabled(model.configurationApplying)
             .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Divider().padding(.bottom, 3)
                     StatusBadge(title: model.status, tone: model.health == nil ? .gray : model.pollingError == nil ? .green : .orange)
                     if model.health != nil {
-                        Text(model.profile.name).font(.headline)
+                        Text(model.profile.name).font(.callout.weight(.semibold)).lineLimit(1)
                         Text(model.profile.local ? String(localized: "This Mac") : model.profile.host)
                             .font(.caption).lineLimit(1).truncationMode(.middle)
                     }
                     if let lastPoll = model.lastPoll {
-                        Text("Last poll: \(lastPoll.formatted(date: .omitted, time: .standard))")
-                            .font(.caption2)
+                        Label("Updated \(lastPoll.formatted(date: .omitted, time: .standard))", systemImage: "clock")
+                            .font(.caption2).lineLimit(1)
                     }
                 }
                 .foregroundStyle(Theme.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+                .padding(.top, 8)
             }
         } detail: {
             VStack(spacing: 0) {

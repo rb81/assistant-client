@@ -37,9 +37,6 @@
         }
       }
     },
-    "•" : {
-
-    },
     "A backup of agent.yaml will be retained. Application images will be rebuilt and workers restarted. Active tasks may be interrupted. The management connection stays available where possible." : {
 
     },
@@ -184,13 +181,13 @@
     "Connect" : {
 
     },
-    "Connect to an instance first." : {
-
-    },
     "Connect to Assistant" : {
 
     },
     "Connect to Assistant through SSH, or use an installation on this Mac." : {
+
+    },
+    "Connect to an instance first." : {
 
     },
     "Connected" : {
@@ -301,9 +298,6 @@
     "Earlier updates" : {
 
     },
-    "editing agent.yaml" : {
-
-    },
     "Email" : {
 
     },
@@ -355,9 +349,6 @@
     "Keep editing" : {
 
     },
-    "Last poll: %@" : {
-
-    },
     "Latest" : {
 
     },
@@ -379,6 +370,12 @@
     "Loading conversation…" : {
 
     },
+    "Loading services…" : {
+
+    },
+    "Loading…" : {
+
+    },
     "Logs · %@" : {
 
     },
@@ -392,6 +389,9 @@
 
     },
     "Naming workstream…" : {
+
+    },
+    "Needs attention. View logs for details." : {
 
     },
     "New chat" : {
@@ -427,6 +427,9 @@
     "No messages in this conversation yet." : {
 
     },
+    "No saved key" : {
+
+    },
     "No service statuses were returned." : {
 
     },
@@ -440,6 +443,12 @@
 
     },
     "Not confirmed — inspect operation history before retrying" : {
+
+    },
+    "Not installed yet." : {
+
+    },
+    "Not running." : {
 
     },
     "Not set" : {
@@ -470,6 +479,9 @@
     "Operation history" : {
 
     },
+    "Optional service is turned off." : {
+
+    },
     "Organized automatically" : {
 
     },
@@ -498,6 +510,12 @@
 
     },
     "Reload" : {
+
+    },
+    "Removal pending" : {
+
+    },
+    "Replacement not saved" : {
 
     },
     "Reply to this conversation" : {
@@ -542,97 +560,10 @@
     "Running" : {
 
     },
-    "Save" : {
+    "Running and responding to health checks." : {
 
     },
-    "Save & Apply" : {
-
-    },
-    "Save and activate reviewed changes" : {
-
-    },
-    "Save and activate reviewed changes?" : {
-
-    },
-    "Save configuration" : {
-
-    },
-    "Save or discard the configuration draft before disconnecting." : {
-
-    },
-    "Save reviewed changes?" : {
-
-    },
-    "Saved connection" : {
-
-    },
-    "Saved connection metadata could not be read: %@" : {
-
-    },
-    "Saved conversations could not be read: %@" : {
-
-    },
-    "Saved. Activate these changes from Server Health when you are ready." : {
-
-    },
-    "Saving or activation may have partial effects. Inspect Server Health and operation history before retrying." : {
-
-    },
-    "Search conversations" : {
-
-    },
-    "Send" : {
-
-    },
-    "Sending" : {
-
-    },
-    "Sending…" : {
-
-    },
-    "Sent — waiting for transcript" : {
-
-    },
-    "Sent externally" : {
-
-    },
-    "Server Health" : {
-
-    },
-    "Server history is preserved. Conversations will be downloaded again when you open Chats." : {
-
-    },
-    "Settings" : {
-
-    },
-    "Settings are saved without restarting services. Apply them later from Server Health." : {
-
-    },
-    "Show advanced settings" : {
-
-    },
-    "Show advanced settings for this page" : {
-
-    },
-    "Show Assistant" : {
-
-    },
-    "Show each setting's environment variable name" : {
-
-    },
-    "Show identifiers" : {
-
-    },
-    "Show tool calls" : {
-
-    },
-    "Some deliveries were not acknowledged. They will be offered again." : {
-
-    },
-    "Some operations have unresolved outcomes. Inspect operation history before retrying." : {
-
-    },
-    "Source changes" : {
+    "Running. Health has not been verified." : {
 
     },
     "SSH alias or user@host" : {
@@ -641,10 +572,10 @@
     "SSH and the launcher work, but the management service is stopped. Start the server with assistant server start." : {
 
     },
-    "SSH connected, but ~/.local/bin/assistant is missing on the server. Install the Assistant server launcher for this SSH account." : {
+    "SSH connected, but this account cannot execute ~/.local/bin/assistant. Check the installed launcher's permissions." : {
 
     },
-    "SSH connected, but this account cannot execute ~/.local/bin/assistant. Check the installed launcher's permissions." : {
+    "SSH connected, but ~/.local/bin/assistant is missing on the server. Install the Assistant server launcher for this SSH account." : {
 
     },
     "SSH could not reach this host and port. Check the server, network, and SSH port." : {
@@ -674,7 +605,124 @@
     "SSH uses your macOS SSH configuration and agent. API tokens are kept only in session memory." : {
 
     },
+    "Save" : {
+
+    },
+    "Save & Apply" : {
+
+    },
+    "Save and activate reviewed changes" : {
+
+    },
+    "Save and activate reviewed changes?" : {
+
+    },
+    "Save configuration" : {
+
+    },
+    "Save or discard the configuration draft before disconnecting." : {
+
+    },
+    "Save reviewed changes?" : {
+
+    },
+    "Saved and active" : {
+
+    },
+    "Saved connection" : {
+
+    },
+    "Saved connection metadata could not be read: %@" : {
+
+    },
+    "Saved conversations could not be read: %@" : {
+
+    },
+    "Saved key status could not be loaded: %@" : {
+
+    },
+    "Saved key status unavailable" : {
+
+    },
+    "Saved service statuses could not be read: %@" : {
+
+    },
+    "Saved · Apply to activate" : {
+
+    },
+    "Saved. Activate these changes from Server Health when you are ready." : {
+
+    },
+    "Saving or activation may have partial effects. Inspect Server Health and operation history before retrying." : {
+
+    },
+    "Search conversations" : {
+
+    },
+    "Send" : {
+
+    },
+    "Sending" : {
+
+    },
+    "Sending…" : {
+
+    },
+    "Sent externally" : {
+
+    },
+    "Sent — waiting for transcript" : {
+
+    },
+    "Server Health" : {
+
+    },
+    "Server history is preserved. Conversations will be downloaded again when you open Chats." : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings are saved without restarting services. Apply them later from Server Health." : {
+
+    },
+    "Setup completed successfully." : {
+
+    },
+    "Show Assistant" : {
+
+    },
+    "Show advanced settings" : {
+
+    },
+    "Show advanced settings for this page" : {
+
+    },
+    "Show each setting's environment variable name" : {
+
+    },
+    "Show identifiers" : {
+
+    },
+    "Show tool calls" : {
+
+    },
+    "Some deliveries were not acknowledged. They will be offered again." : {
+
+    },
+    "Some operations have unresolved outcomes. Inspect operation history before retrying." : {
+
+    },
+    "Source changes" : {
+
+    },
     "Start" : {
+
+    },
+    "Starting up…" : {
+
+    },
+    "Status unknown" : {
 
     },
     "Stop" : {
@@ -695,6 +743,9 @@
     "Succeeded" : {
 
     },
+    "Technical details" : {
+
+    },
     "Technical request details" : {
 
     },
@@ -708,9 +759,6 @@
 
     },
     "The connection to the server was interrupted. Reconnecting may help." : {
-
-    },
-    "the conversation list" : {
 
     },
     "The conversation, attachments, and workstream are kept. Execution details are removed and replaced with a read-only deletion marker." : {
@@ -755,6 +803,9 @@
     "These changes have not been saved to the server." : {
 
     },
+    "This Mac" : {
+
+    },
     "This attachment is no longer available for download." : {
 
     },
@@ -771,9 +822,6 @@
 
     },
     "This image format cannot be displayed. Download the file to open it in another app." : {
-
-    },
-    "This Mac" : {
 
     },
     "This profile reached a different installation. Verify the server before creating a new profile." : {
@@ -803,6 +851,9 @@
     "Unknown" : {
 
     },
+    "Unread" : {
+
+    },
     "Unsaved changes" : {
 
     },
@@ -812,10 +863,16 @@
     "Update the server to enable combined save and activation." : {
 
     },
+    "Updated %@" : {
+
+    },
     "Updated %@ · Health checks do not verify model or integration outcomes." : {
 
     },
     "Updates" : {
+
+    },
+    "Updating service health…" : {
 
     },
     "Upload %@" : {
@@ -861,6 +918,15 @@
 
     },
     "Your platform. One connection." : {
+
+    },
+    "editing agent.yaml" : {
+
+    },
+    "the conversation list" : {
+
+    },
+    "•" : {
 
     }
   },

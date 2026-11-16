@@ -131,6 +131,9 @@ actor PreviewManagementAPI: ManagementAPI {
         } else if resource == "tasks/7/deletion-preview" {
             value = .object(["task_id": .integer(7), "deletable": .bool(true),
                              "preview_digest": .string(String(repeating: "a", count: 64))])
+        } else if resource.hasSuffix("/logs") {
+            value = .object(["content": .string("task-agent | 2026-11-16T10:00:00Z {\"level\":\"info\",\"message\":\"Ready for tasks\"}"),
+                             "truncated": .bool(false)])
         } else if resource.hasPrefix("services") {
             value = .object(["services": .array([.object([
                 "id": .string("task-agent"), "title": .string("Task worker"),
@@ -142,6 +145,10 @@ actor PreviewManagementAPI: ManagementAPI {
             value = .object(["entries": .array([.object([
                 "path": .string("notes"), "is_dir": .bool(true), "size_bytes": .integer(0)
             ])]), "total": .integer(1)])
+        } else if resource == "credentials" {
+            value = .object(["credentials": .array([
+                .object(["name": .string("AGENT_LLM_OPENROUTER_API_KEY"), "status": .string("configured")])
+            ])])
         } else if resource == "configuration" {
             value = .object([
                 "revision": .string(String(repeating: "a", count: 64)), "setup_complete": .bool(true),
@@ -153,6 +160,9 @@ actor PreviewManagementAPI: ManagementAPI {
                             help: "The name the assistant uses when introducing itself."),
                     setting("models", "AGENT_LLM_MODEL", "Primary model", "example/model",
                             help: "Model used for ordinary tasks."),
+                    .object(["group": .string("models"), "key": .string("AGENT_LLM_OPENROUTER_API_KEY"),
+                             "label": .string("OpenRouter API key"), "value": .string(""),
+                             "secret": .bool(true), "boolean": .bool(false), "editable": .bool(true)]),
                     setting("email", "AGENT_EMAIL_IMAP_HOST", "IMAP server", "imap.example.test",
                             help: "Incoming mail server for the assistant's mailbox."),
                     setting("calendar", "AGENT_CALENDAR_DEFAULT_PROVIDER", "Default provider", "google",

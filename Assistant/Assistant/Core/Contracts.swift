@@ -180,6 +180,27 @@ struct ClientHistory: Decodable, Sendable {
     }
 }
 
+/// Credential status contains metadata only; saved values never reach the UI.
+struct CredentialInventory: Decodable, Sendable {
+    let credentials: [SavedCredential]
+}
+
+/// Activation state is reported by the server, not inferred from a masked text field.
+struct SavedCredential: Decodable, Sendable {
+    let name: String
+    let status: String
+
+    var active: Bool { status == "configured" }
+    var title: String {
+        switch status {
+        case "configured": return String(localized: "Saved and active")
+        case "activation pending": return String(localized: "Saved · Apply to activate")
+        case "removal pending": return String(localized: "Removal pending")
+        default: return String(localized: "Status unknown")
+        }
+    }
+}
+
 /// Catalog field metadata is supplied by the server, not duplicated in the UI.
 struct SettingField: Decodable, Identifiable, Sendable {
     let group: String

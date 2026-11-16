@@ -4,6 +4,8 @@ import SwiftUI
 struct SettingRow: View {
     let field: SettingField
     let showIdentifier: Bool
+    var credential: SavedCredential? = nil
+    var credentialStatusLoaded = false
     @Binding var value: String
 
     var body: some View {
@@ -53,6 +55,17 @@ struct SettingRow: View {
         } else if field.secret {
             SecureField(field.label, text: $value, prompt: Text("Leave blank to keep the saved value"))
                 .textFieldStyle(.roundedBorder)
+            if !value.isEmpty {
+                Label("Replacement not saved", systemImage: "pencil.circle")
+                    .font(.caption).foregroundStyle(.orange)
+            } else if let credential {
+                Label(credential.title, systemImage: credential.active ? "checkmark.circle.fill" : "clock")
+                    .font(.caption).foregroundStyle(credential.active ? .green : .orange)
+            } else {
+                Label(credentialStatusLoaded ? "No saved key" : "Saved key status unavailable",
+                      systemImage: "key")
+                    .font(.caption).foregroundStyle(Theme.secondary)
+            }
         } else if let choices = field.choices {
             Picker(field.label, selection: $value) {
                 // Keep an unexpected saved value selectable rather than silently replacing it.

@@ -2,6 +2,18 @@ import SwiftUI
 
 /// Service health distinguishes a healthy container, an unverified process, and a stopped worker.
 enum ServiceAppearance {
+    /// Probe jargon stays in technical details rather than the primary service description.
+    static func summary(state: String, health: String) -> String {
+        if health.contains("unhealthy") || health.contains("failed") { return String(localized: "Needs attention. View logs for details.") }
+        if state.contains("restarting") || health.contains("starting") { return String(localized: "Starting up…") }
+        if health.contains("completed successfully") { return String(localized: "Setup completed successfully.") }
+        if state == "profile inactive" { return String(localized: "Optional service is turned off.") }
+        if state == "not created" { return String(localized: "Not installed yet.") }
+        if state != "running" { return String(localized: "Not running.") }
+        return health.hasPrefix("healthy") ? String(localized: "Running and responding to health checks.") :
+            String(localized: "Running. Health has not been verified.")
+    }
+
     /// State and probe results must both support a green status.
     static func tone(state: String, health: String) -> Color {
         if state.contains("restarting") || health.contains("starting") { return .orange }
@@ -15,13 +27,11 @@ enum ServiceAppearance {
 /// A clear service inventory and deliberate lifecycle controls replace the technical status dump.
 struct ServicesView: View {
     let model: ClientModel
-    @State private var services: [JSONValue] = []
     @State private var pending: ReviewedMutation?
     @State private var error: String?
     @State private var busy = false
     @State private var logService: String?
     @State private var showingOperations = false
-    @State private var refreshed: Date?
 
     var body: some View {
         ScrollView {
@@ -32,9 +42,14 @@ struct ServicesView: View {
                     Text(model.profile.name).font(.headline)
                     Spacer()
                     Button("Operation history", systemImage: "clock.arrow.circlepath") { showingOperations = true }
-                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }.disabled(busy)
+                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
+                        .disabled(busy || model.servicesLoading)
                 }
                 if let error { ErrorBanner(message: error) }
+                if let error = model.servicesError { ErrorBanner(message: error) }
+                if model.servicesLoading {
+                    ProgressView(model.services.isEmpty ? "Loading services…" : "Updating service health…")
+                }
                 if !model.references.filter({ $0.instanceID == model.health?.instanceID }).isEmpty {
                     Label("Some operations have unresolved outcomes. Inspect operation history before retrying.",
                           systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
@@ -52,18 +67,23 @@ struct ServicesView: View {
                         Button("Stop application", role: .destructive) { lifecycle("stop") }
                     }
                 }
-                ForEach(Array(services.enumerated()), id: \.offset) { _, service in serviceCard(service) }
-                if services.isEmpty && !busy && error == nil {
+                ForEach(Array(model.services.enumerated()), id: \.offset) { _, service in serviceCard(service) }
+                if model.services.isEmpty && !model.servicesLoading && model.servicesError == nil {
                     Text("No service statuses were returned.").foregroundStyle(Theme.secondary)
                 }
-                if let refreshed {
+                if let refreshed = model.servicesUpdatedAt {
                     Text("Updated \(refreshed.formatted(date: .omitted, time: .standard)) · Health checks do not verify model or integration outcomes.")
                         .font(.caption).foregroundStyle(Theme.secondary)
                 }
             }
             .frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity)
         }
-        .disabled(busy).task { await load() }
+        .disabled(busy).task {
+            while !Task.isCancelled {
+                await load()
+                do { try await Task.sleep(for: .seconds(10)) } catch { return }
+            }
+        }
         .sheet(item: $pending) { mutation in
             MutationReview(mutation: mutation) {
                 busy = true
@@ -103,7 +123,8 @@ struct ServicesView: View {
                     Image(systemName: "server.rack").font(.title2).foregroundStyle(Theme.accent).frame(width: 34)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(service["title"]?.string ?? id).font(.headline)
-                        Text(health).font(.callout).foregroundStyle(Theme.secondary)
+                        Text(ServiceAppearance.summary(state: state, health: health))
+                            .font(.callout).foregroundStyle(Theme.secondary)
                         Text(service["uptime"]?.string ?? String(localized: "Uptime not reported by this server"))
                             .font(.caption).foregroundStyle(Theme.secondary)
                     }
@@ -118,6 +139,10 @@ struct ServicesView: View {
                     Button("Stop", role: .destructive) { lifecycle("stop", service: id) }
                         .disabled(["management", "management-docker"].contains(id))
                 }.font(.callout)
+                DisclosureGroup("Technical details") {
+                    Text(health).font(.caption.monospaced()).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.font(.caption).foregroundStyle(Theme.secondary)
             }
         }
     }
@@ -135,13 +160,7 @@ struct ServicesView: View {
 
     /// Errors never masquerade as an empty healthy installation.
     private func load() async {
-        busy = true
-        defer { busy = false }
-        do {
-            let result = try await model.read("services?details=true")
-            guard let services = result["services"]?.array else { throw ClientError.malformedResponse }
-            self.services = services; refreshed = Date(); error = nil
-        } catch { self.error = error.presentableMessage ?? self.error }
+        await model.refreshServices()
     }
 }
 
@@ -151,15 +170,35 @@ struct ResourceInspector: View {
     let resource: String
     @State private var output = ""
     @State private var error: String?
+    @State private var loading = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let error { ErrorBanner(message: error) }
+            if loading { ProgressView("Loading…") }
             ScrollView { TerminalOutput(text: output) }
         }.padding().task(id: resource) {
-            do { output = try await model.read(resource).formatted(); error = nil }
+            loading = true
+            defer { loading = false }
+            do {
+                let result = try await model.read(resource)
+                output = try result["content"]?.string.map(ServiceLogFormatting.prettyPrinted) ?? result.formatted()
+                error = nil
+            }
             catch { self.error = error.presentableMessage ?? self.error }
         }
+    }
+}
+
+/// Formats JSON log lines individually while preserving timestamps and non-JSON diagnostics.
+enum ServiceLogFormatting {
+    static func prettyPrinted(_ content: String) throws -> String {
+        try content.components(separatedBy: .newlines).map { line in
+            guard let start = line.firstIndex(of: "{"),
+                  let data = String(line[start...]).data(using: .utf8),
+                  let value = try? JSONDecoder().decode(JSONValue.self, from: data) else { return line }
+            return String(line[..<start]) + "\n" + (try value.formatted())
+        }.joined(separator: "\n")
     }
 }
 

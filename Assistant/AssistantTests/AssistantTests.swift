@@ -6,6 +6,74 @@ import XCTest
 
 /// Isolated transport and mutation tests never contact a real server or Docker installation.
 final class AssistantTests: XCTestCase {
+    /// Unread state survives relaunch, ignores clicks, and never marks newer list metadata as rendered.
+    @MainActor
+    func testUnreadConversationsPersistOnlyRenderedVersionsAndSortByInstant() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let api = ChatAPI()
+        let model = ClientModel(defaults: defaults, api: api, health: health)
+        try await model.chats.loadConversations(model)
+        let original = try XCTUnwrap(model.chats.conversations.first)
+        XCTAssertTrue(model.chats.isUnread(original))
+        model.chats.select(original)
+        model.chats.markRendered()
+        XCTAssertTrue(model.chats.isUnread(original), "Selection alone is not reading")
+        try await model.chats.refresh(model)
+        model.chats.markRendered()
+        XCTAssertFalse(model.chats.isUnread(original))
+
+        var changed = original
+        changed.latestTaskID += 1
+        let newer = Conversation(threadID: "new", channel: "email", messageCount: 1, openingMessage: "New",
+                                 lastActivityAt: "2026-11-16T12:00:00+01:00", latestTaskID: 9,
+                                 latestTaskStatus: "completed", latestTaskSummary: nil, workstreamTitle: nil)
+        await api.setConversations([changed, newer])
+        try await model.chats.loadConversations(model)
+        XCTAssertEqual(model.chats.conversations.map(\.threadID), ["new", original.threadID])
+        model.chats.markRendered()
+        XCTAssertTrue(model.chats.isUnread(changed), "An older transcript cannot clear a new task's unread state")
+        let restored = ClientModel(defaults: defaults, api: api, health: health)
+        XCTAssertFalse(restored.chats.isUnread(original))
+        XCTAssertTrue(restored.chats.isUnread(changed))
+        try restored.chats.restoreCache(instance: "other")
+        XCTAssertTrue(restored.chats.conversations.isEmpty)
+    }
+
+    /// Reopened health pages retain an installation-scoped snapshot while their next read is in flight.
+    @MainActor
+    func testServiceSnapshotRendersWhileRefreshingAndDoesNotCrossInstances() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let api = ChatAPI()
+        let first = ClientModel(defaults: defaults, api: api, health: health)
+        await first.refreshServices()
+        XCTAssertEqual(first.services.count, 1)
+        let restored = ClientModel(defaults: defaults, api: api, health: health)
+        XCTAssertEqual(restored.services.count, 1)
+        await api.pauseNextRead("services")
+        let refresh = Task { await restored.refreshServices() }
+        try await waitForRead("services", api: api)
+        XCTAssertTrue(restored.servicesLoading)
+        XCTAssertEqual(restored.services.count, 1)
+        await api.resumeRead("services")
+        await refresh.value
+        XCTAssertFalse(restored.servicesLoading)
+        let otherHealth = InstanceHealth(apiVersion: 2, instanceID: "other", name: "Other", capabilities: [], readOnly: false)
+        XCTAssertTrue(ClientModel(defaults: defaults, api: api, health: otherHealth).services.isEmpty)
+    }
+
+    /// Nested log content is rendered as JSON, not an escaped string inside another JSON document.
+    func testServiceLogsAndCredentialActivationPresentation() throws {
+        let text = try ServiceLogFormatting.prettyPrinted("worker | 2026-11-16 {\"level\":\"info\",\"message\":\"Ready\"}\nplain diagnostic")
+        XCTAssertTrue(text.contains("\"level\" : \"info\""))
+        XCTAssertTrue(text.hasSuffix("plain diagnostic"))
+        XCTAssertFalse(text.contains("\\\"message\\\""))
+        XCTAssertTrue(SavedCredential(name: "KEY", status: "configured").active)
+        XCTAssertFalse(SavedCredential(name: "KEY", status: "activation pending").active)
+        XCTAssertNotEqual(SavedCredential(name: "KEY", status: "configured").title,
+                          SavedCredential(name: "KEY", status: "activation pending").title)
+        XCTAssertFalse(ServiceAppearance.summary(state: "running", health: "healthy (daemon ping)").contains("daemon"))
+    }
+
     /// Incomplete fences are common during generation; code must remain copyable without losing whitespace.
     func testMarkdownFencesPreserveSource() {
         XCTAssertEqual(MarkdownBlock.parse("Hello\n```swift\n  let x = 1\n```"), [

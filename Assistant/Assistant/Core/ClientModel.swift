@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 
+/// Non-secret service snapshots are scoped to a verified installation.
+private struct ServiceSnapshot: Codable {
+    let services: [JSONValue]
+    let updatedAt: Date
+}
+
 /// Shared native state; views never retain tokens or construct SSH commands.
 @MainActor @Observable
 final class ClientModel {
@@ -22,6 +28,10 @@ final class ClientModel {
     var chats: ConversationModel
     var newChatRequest = UUID()
     var configurationApplying = false
+    private(set) var services: [JSONValue] = []
+    private(set) var servicesUpdatedAt: Date?
+    private(set) var servicesLoading = false
+    private(set) var servicesError: String?
     private(set) var api: (any ManagementAPI)?
     private let connection = SSHConnection()
     private let defaults: UserDefaults
@@ -43,6 +53,7 @@ final class ClientModel {
             }
             if let first = profiles.first { profile = first }
             if let health { try chats.restoreCache(instance: health.instanceID) }
+            if let health { try restoreServices(instance: health.instanceID) }
         } catch {
             self.error = String(localized: "Saved connection metadata could not be read: \(error.localizedDescription)")
         }
@@ -75,6 +86,8 @@ final class ClientModel {
             try saveProfile()
             do { try chats.restoreCache(instance: health.instanceID) }
             catch { chats.error = String(localized: "Saved conversations could not be read: \(error.localizedDescription)") }
+            do { try restoreServices(instance: health.instanceID) }
+            catch { servicesError = String(localized: "Saved service statuses could not be read: \(error.localizedDescription)") }
             status = String(localized: "Connected")
             let instance = health.instanceID
             pollTask = Task { [weak self] in
@@ -110,6 +123,7 @@ final class ClientModel {
         pollingError = nil
         operations = []
         lastPoll = nil
+        services = []; servicesUpdatedAt = nil; servicesError = nil; servicesLoading = false
         status = String(localized: "Disconnected")
         await connection.disconnect()
     }
@@ -127,6 +141,31 @@ final class ClientModel {
         let result = try await api.read(resource, as: JSONValue.self)
         guard generation == current else { throw CancellationError() }
         return result
+    }
+
+    /// Keeps the last successful inventory visible while checking current health.
+    func refreshServices() async {
+        guard !servicesLoading, let instance = health?.instanceID else { return }
+        let current = generation
+        servicesLoading = true
+        defer { if current == generation { servicesLoading = false } }
+        do {
+            let result = try await read("services?details=true")
+            guard current == generation else { return }
+            guard let rows = result["services"]?.array else { throw ClientError.malformedResponse }
+            let updatedAt = Date()
+            let data = try JSONEncoder().encode(ServiceSnapshot(services: rows, updatedAt: updatedAt))
+            defaults.set(data, forKey: "assistant.services.\(instance)")
+            services = rows; servicesUpdatedAt = updatedAt; servicesError = nil
+        } catch {
+            if current == generation, let message = error.presentableMessage { servicesError = message }
+        }
+    }
+
+    private func restoreServices(instance: String) throws {
+        guard let data = defaults.data(forKey: "assistant.services.\(instance)") else { return }
+        let snapshot = try JSONDecoder().decode(ServiceSnapshot.self, from: data)
+        services = snapshot.services; servicesUpdatedAt = snapshot.updatedAt
     }
 
     /// Performs side-effect-free configuration previews and typed domain queries.

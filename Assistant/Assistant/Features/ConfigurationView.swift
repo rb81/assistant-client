@@ -4,6 +4,9 @@ import SwiftUI
 struct ConfigurationView: View {
     let model: ClientModel
     @State private var configuration: FullConfiguration?
+    @State private var credentials: [SavedCredential] = []
+    @State private var credentialStatusLoaded = false
+    @State private var credentialError: String?
     @State private var values: [String: String] = [:]
     @State private var instructions = ""
     @State private var yaml = ""
@@ -35,6 +38,7 @@ struct ConfigurationView: View {
                     .disabled(model.chats.sending)
             }
             if let error { ErrorBanner(message: error) }
+            if let credentialError { ErrorBanner(message: credentialError) }
             if let notice { Label(notice, systemImage: "info.circle").foregroundStyle(Theme.secondary).textSelection(.enabled) }
             HStack(alignment: .top, spacing: 24) {
                 sidebar.frame(width: Self.sidebarWidth)
@@ -187,7 +191,9 @@ struct ConfigurationView: View {
     private func fieldList(_ fields: [SettingField]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(fields) { field in
-                SettingRow(field: field, showIdentifier: showIdentifiers, value: binding(field))
+                SettingRow(field: field, showIdentifier: showIdentifiers,
+                           credential: credentials.first { $0.name == field.key },
+                           credentialStatusLoaded: credentialStatusLoaded, value: binding(field))
                 if field.id != fields.last?.id { Divider() }
             }
         }
@@ -328,6 +334,15 @@ struct ConfigurationView: View {
             model.configurationDirty = false
             error = nil
         } catch { self.error = error.presentableMessage ?? self.error }
+        do {
+            let result = try await model.read("credentials")
+            credentials = try Wire.decoder().decode(CredentialInventory.self, from: JSONEncoder().encode(result)).credentials
+            credentialStatusLoaded = true
+            credentialError = nil
+        } catch {
+            credentialStatusLoaded = false
+            credentialError = error.presentableMessage.map { String(localized: "Saved key status could not be loaded: \($0)") }
+        }
     }
 
     /// Preview includes source text so stale backups or external changes cannot be overwritten.

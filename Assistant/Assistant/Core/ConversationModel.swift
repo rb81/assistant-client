@@ -231,12 +231,14 @@ private struct CachedTranscript: Codable {
     var toolCalls: [ToolCall]
     var activityTruncated: Bool
     var fetchedAt: Date
+    var conversationVersion: String? = nil
 }
 
 /// Disk snapshots are partitioned by verified installation identity and contain no transport credentials.
 private struct ConversationCache: Codable {
     var conversations: [Conversation]
     var transcripts: [String: CachedTranscript]
+    var readVersions: [String: String]? = nil
 }
 
 /// Server-backed conversations retain unsent text only in this connection's memory.
@@ -272,11 +274,13 @@ final class ConversationModel {
     private var drafts: [String: String] = [:]
     private var cache: [String: CachedTranscript] = [:]
     private var savedConversations: [String: Conversation] = [:]
+    private var readVersions: [String: String] = [:]
     private let defaults: UserDefaults
     private var cacheKey: String?
     private var generation = UUID()
     private var refreshVersion = 0
     private var transcriptLoaded = false
+    private(set) var renderedVersion: String?
     private var deliveries: [String: [Int]] = [:]
     /// Older servers have no activity endpoint; stop asking once that is known.
     private var activityUnsupported = false
@@ -293,6 +297,7 @@ final class ConversationModel {
         guard let data = defaults.data(forKey: key) else { return }
         let saved = try JSONDecoder().decode(ConversationCache.self, from: data)
         cache = saved.transcripts
+        readVersions = saved.readVersions ?? [:]
         conversations = saved.conversations
         savedConversations = Dictionary(uniqueKeysWithValues: conversations.map { ($0.threadID, $0) })
         totalConversations = conversations.count
@@ -307,15 +312,42 @@ final class ConversationModel {
         refreshVersion += 1
         cache = [:]
         savedConversations = [:]
+        readVersions = [:]
     }
 
     private func persistCache() throws {
         guard let cacheKey else { return }
-        let sorted = savedConversations.values.sorted { $0.lastActivityAt > $1.lastActivityAt }
-        defaults.set(try JSONEncoder().encode(ConversationCache(conversations: sorted, transcripts: cache)), forKey: cacheKey)
+        let sorted = savedConversations.values.sorted(by: Self.newestFirst)
+        defaults.set(try JSONEncoder().encode(ConversationCache(
+            conversations: sorted, transcripts: cache, readVersions: readVersions
+        )), forKey: cacheKey)
     }
 
     var selected: Conversation? { conversations.first { $0.threadID == selectedThread } }
+
+    /// Local read state is separate from the server's delivery acknowledgments.
+    func isUnread(_ conversation: Conversation) -> Bool {
+        readVersions[conversation.threadID] != Self.readVersion(conversation)
+    }
+
+    /// Called only once the selected transcript is rendered, never when a list row is clicked.
+    func markRendered() {
+        guard transcriptLoaded, let selected, let version = renderedVersion else { return }
+        guard readVersions[selected.threadID] != version else { return }
+        readVersions[selected.threadID] = version
+        do { try persistCache() }
+        catch { self.error = error.presentableMessage }
+    }
+
+    private static func readVersion(_ conversation: Conversation) -> String {
+        "\(conversation.lastActivityAt)|\(conversation.messageCount)|\(conversation.latestTaskID)"
+    }
+
+    private static func newestFirst(_ lhs: Conversation, _ rhs: Conversation) -> Bool {
+        let left = ServerDate.parse(lhs.lastActivityAt) ?? .distantPast
+        let right = ServerDate.parse(rhs.lastActivityAt) ?? .distantPast
+        return left == right ? lhs.latestTaskID > rhs.latestTaskID : left > right
+    }
 
     /// Messages and tool calls in the order they happened.
     var timeline: [TranscriptItem] {
@@ -330,7 +362,7 @@ final class ConversationModel {
         conversations = []; selectedThread = nil; draft = ""
         search = ""; channel = ""; research = false
         totalConversations = 0; listPage = 0; listFetchedAt = nil; error = nil
-        drafts = [:]; cache = [:]; savedConversations = [:]; cacheKey = nil
+        drafts = [:]; cache = [:]; savedConversations = [:]; readVersions = [:]; cacheKey = nil
         deliveries = [:]; activityUnsupported = false
         pendingMessage = nil; pendingThread = nil; pendingRequestID = nil
         pendingUnconfirmed = false; sending = false
@@ -357,6 +389,7 @@ final class ConversationModel {
             messages = cached.messages; totalMessages = cached.totalMessages; messagePages = cached.messagePages
             toolCalls = cached.toolCalls; activityTruncated = cached.activityTruncated
             transcriptLoaded = true
+            renderedVersion = cached.conversationVersion
             loadingTranscript = false
         } else {
             resetTranscript()
@@ -367,6 +400,7 @@ final class ConversationModel {
     private func resetTranscript() {
         messages = []; toolCalls = []; totalMessages = 0; messagePages = 1; activityTruncated = false
         transcriptLoaded = false
+        renderedVersion = nil
         loadingTranscript = false
     }
 
@@ -412,6 +446,7 @@ final class ConversationModel {
         } else {
             conversations = decoded.rows
         }
+        conversations.sort(by: Self.newestFirst)
         totalConversations = decoded.total
         listFetchedAt = .now
         try persistCache()
@@ -457,6 +492,7 @@ final class ConversationModel {
         messages = transcript
         totalMessages = latest.total
         transcriptLoaded = true
+        renderedVersion = Self.readVersion(selected)
         loadingTranscript = false
         if let pendingRequestID, pendingThread == thread,
            transcript.contains(where: { $0.incoming && $0.channel == "client" && $0.wireID == pendingRequestID }) {
@@ -480,7 +516,7 @@ final class ConversationModel {
     private func remember(_ thread: String) throws {
         cache[thread] = CachedTranscript(messages: messages, totalMessages: totalMessages, messagePages: messagePages,
                                          toolCalls: toolCalls, activityTruncated: activityTruncated,
-                                         fetchedAt: Date())
+                                         fetchedAt: Date(), conversationVersion: renderedVersion)
         if let selected { savedConversations[thread] = selected }
         try persistCache()
     }
