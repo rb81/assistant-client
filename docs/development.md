@@ -101,6 +101,12 @@ until **Clear chat cache**. Attachments are memory-only unless downloaded, with 
 64 MiB per-file limit. Workspace uploads are scanner-gated and limited to 1 MiB.
 Closing the client never stops services.
 
+Unread markers are local to this Mac and separate from delivery acknowledgments.
+Service inventories are cached per installation and refreshed every ten seconds
+while Server Health is open; cached statuses are not proof of current health.
+Attachment downloads require the server to return a current SHA-256 digest,
+including for project files whose tracking metadata has no digest.
+
 Remote Markdown uses native text views: HTML/scripts and remote images are not
 executed or loaded. Diagnostics remain selectable technical details, not the
 primary interface.

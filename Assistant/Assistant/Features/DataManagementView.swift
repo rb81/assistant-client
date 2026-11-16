@@ -16,12 +16,16 @@ struct DataManagementView: View {
     @State private var showingReset = false
     @State private var confirmation = ""
     @State private var resetting = false
+    @State private var hasLoaded = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeading(title: "Data", subtitle: "Browse Assistant’s workspace. Shared files stay separate from chat task deletion.")
-                if let error { ErrorBanner(message: error) }
+                if let error {
+                    ErrorBanner(message: error)
+                    Button("Retry loading workspace", systemImage: "arrow.clockwise") { Task { await load() } }
+                }
                 if let notice { Label(notice, systemImage: "info.circle").foregroundStyle(Theme.secondary) }
                 ManagementPanel {
                     VStack(alignment: .leading, spacing: 16) {
@@ -41,7 +45,11 @@ struct DataManagementView: View {
                             Text(path).font(.callout.monospaced()).textSelection(.enabled).lineLimit(1)
                         }
                         Divider()
-                        if entries.isEmpty { Text("This folder is empty.").foregroundStyle(Theme.secondary) }
+                        if busy || !hasLoaded && error == nil { ProgressView("Loading workspace…") }
+                        if entries.isEmpty && !busy {
+                            Text(error != nil ? "Workspace could not be loaded." : hasLoaded ? "This folder is empty." : "Loading workspace…")
+                                .foregroundStyle(Theme.secondary)
+                        }
                         ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in fileRow(entry) }
                         HStack {
                             Button("Previous") { offset = max(0, offset - 100); Task { await load() } }.disabled(offset == 0)
@@ -92,7 +100,7 @@ struct DataManagementView: View {
             guard let entries = result["entries"]?.array, let total = result["total"]?.integer else {
                 throw ClientError.malformedResponse
             }
-            self.entries = entries; self.total = Int(total); error = nil
+            self.entries = entries; self.total = Int(total); hasLoaded = true; error = nil
         } catch { self.error = error.presentableMessage ?? self.error }
     }
 

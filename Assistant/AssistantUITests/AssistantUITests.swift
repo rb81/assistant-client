@@ -2,6 +2,32 @@ import XCTest
 
 /// Native launch smoke test performs no server connection.
 final class AssistantUITests: XCTestCase {
+    /// Saved key state and log JSON stay readable in both supported appearances.
+    @MainActor
+    func testCredentialStatusAndReadableLogs() {
+        for dark in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = dark ? ["--ui-fixture", "--ui-dark"] : ["--ui-fixture"]
+            app.launch()
+            app.staticTexts["Server Health"].firstMatch.click()
+            let logs = app.buttons["View logs"]
+            XCTAssertTrue(logs.waitForExistence(timeout: 10))
+            logs.click()
+            let message = jsonField("message", in: app)
+            XCTAssertTrue(message.waitForExistence(timeout: 10))
+            XCTAssertFalse((message.value as? String ?? message.label).contains("\\\""))
+            capture(app, name: dark ? "Readable logs dark" : "Readable logs light")
+            app.buttons["Done"].click()
+            app.staticTexts["Settings"].firstMatch.click()
+            let models = app.buttons["Models & access"]
+            XCTAssertTrue(models.waitForExistence(timeout: 10))
+            models.click()
+            XCTAssertTrue(app.staticTexts["Saved and active"].waitForExistence(timeout: 10))
+            capture(app, name: dark ? "Saved key status dark" : "Saved key status light")
+            app.terminate()
+        }
+    }
+
     /// Connected screens and a synthetic write can be exercised without touching server data.
     @MainActor
     func testConnectedWorkspace() {

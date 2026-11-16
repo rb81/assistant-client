@@ -373,6 +373,9 @@
     "Loading services…" : {
 
     },
+    "Loading workspace…" : {
+
+    },
     "Loading…" : {
 
     },
@@ -540,6 +543,9 @@
 
     },
     "Retry loading conversation" : {
+
+    },
+    "Retry loading workspace" : {
 
     },
     "Review" : {
@@ -900,6 +906,9 @@
 
     },
     "Working…" : {
+
+    },
+    "Workspace could not be loaded." : {
 
     },
     "Workspace files" : {
