@@ -1,5 +1,7 @@
 import Foundation
 import Observation
+import AppKit
+import UserNotifications
 
 /// Non-secret service snapshots are scoped to a verified installation.
 private struct ServiceSnapshot: Codable {
@@ -10,6 +12,11 @@ private struct ServiceSnapshot: Codable {
 /// Shared native state; views never retain tokens or construct SSH commands.
 @MainActor @Observable
 final class ClientModel {
+    /// Local feedback retains activation state, not server configuration values.
+    enum ActivationState: String {
+        case active, pending, unknown
+    }
+    var activationState = ActivationState.active
     var profiles: [ConnectionProfile] = []
     var profile = ConnectionProfile()
     var health: InstanceHealth?
@@ -26,8 +33,19 @@ final class ClientModel {
     var busy = false
     var configurationDirty = false
     var chats: ConversationModel
+    let reminderRuns: ConversationModel
     var newChatRequest = UUID()
     var configurationApplying = false
+    var liveRevision = 0
+    var liveUpdates = false
+    var liveUpdateError: String?
+    var notificationTaskID: Int?
+    var notificationApprovals = false
+    var pendingApprovals = 0
+    var notificationRequest = UUID()
+    var activityUpdates: [ActivityUpdate] = []
+    var updatesSeenAt = Date.distantPast
+    var setupRequired = false
     private(set) var services: [JSONValue] = []
     private(set) var servicesUpdatedAt: Date?
     private(set) var servicesLoading = false
@@ -36,12 +54,19 @@ final class ClientModel {
     private let connection = SSHConnection()
     private let defaults: UserDefaults
     private var pollTask: Task<Void, Never>?
+    private var eventTask: Task<Void, Never>?
+    private var approvalTask: Task<Void, Never>?
+    private var approvalRefreshPending = false
+    private var lastApprovalRefresh: Date?
+    private var notificationIDs: Set<String> = []
+    private var notificationOrder: [String] = []
     private var generation = UUID()
 
     /// Loads only non-secret metadata and reports malformed local state explicitly.
     init(defaults: UserDefaults = .standard, api: (any ManagementAPI)? = nil, health: InstanceHealth? = nil) {
         self.defaults = defaults
         self.chats = ConversationModel(defaults: defaults)
+        self.reminderRuns = ConversationModel(defaults: defaults, reminderHistory: true)
         self.api = api
         self.health = health
         do {
@@ -54,6 +79,15 @@ final class ClientModel {
             if let first = profiles.first { profile = first }
             if let health { try chats.restoreCache(instance: health.instanceID) }
             if let health { try restoreServices(instance: health.instanceID) }
+            if let health {
+                activationState = ActivationState(rawValue: defaults.string(forKey: "assistant.activation.\(health.instanceID)") ?? "") ?? .active
+                updatesSeenAt = Date(timeIntervalSince1970: defaults.double(forKey: "assistant.updatesSeen.\(health.instanceID)"))
+            }
+            if let data = defaults.data(forKey: "assistant.activity") {
+                activityUpdates = try JSONDecoder().decode([ActivityUpdate].self, from: data)
+            }
+            notificationOrder = defaults.stringArray(forKey: "assistant.notified") ?? []
+            notificationIDs = Set(notificationOrder)
         } catch {
             self.error = String(localized: "Saved connection metadata could not be read: \(error.localizedDescription)")
         }
@@ -82,6 +116,8 @@ final class ClientModel {
             guard current == generation else { return }
             self.api = api
             self.health = health
+            activationState = ActivationState(rawValue: defaults.string(forKey: "assistant.activation.\(health.instanceID)") ?? "") ?? .active
+            updatesSeenAt = Date(timeIntervalSince1970: defaults.double(forKey: "assistant.updatesSeen.\(health.instanceID)"))
             profile.instanceID = health.instanceID
             try saveProfile()
             do { try chats.restoreCache(instance: health.instanceID) }
@@ -89,10 +125,21 @@ final class ClientModel {
             do { try restoreServices(instance: health.instanceID) }
             catch { servicesError = String(localized: "Saved service statuses could not be read: \(error.localizedDescription)") }
             status = String(localized: "Connected")
+            if health.capabilities.contains("configuration.structured") {
+                do {
+                    let catalog = try await api.read("configuration/catalog", as: JSONValue.self)
+                    guard generation == current else { return }
+                    guard case .bool(let complete)? = catalog["setup_complete"] else { throw ClientError.malformedResponse }
+                    setupRequired = !complete
+                } catch {
+                    if generation == current { self.error = error.presentableMessage }
+                }
+            }
             let instance = health.instanceID
             pollTask = Task { [weak self] in
                 await self?.runPolling(instance: instance, generation: current)
             }
+            startEvents(generation: current)
         } catch {
             if current == generation {
                 self.error = error.presentableMessage
@@ -113,17 +160,25 @@ final class ClientModel {
         generation = UUID()
         pollTask?.cancel()
         pollTask = nil
+        eventTask?.cancel(); eventTask = nil
+        approvalTask?.cancel(); approvalTask = nil
+        approvalRefreshPending = false; lastApprovalRefresh = nil; pendingApprovals = 0
+        eventCursor = nil
+        liveUpdates = false; liveUpdateError = nil
         api = nil
         health = nil
         clientID = nil
         messages = []
         chats.clear()
+        reminderRuns.clear()
         offeredIDs = []
         historyCursor = nil
         pollingError = nil
         operations = []
         lastPoll = nil
         services = []; servicesUpdatedAt = nil; servicesError = nil; servicesLoading = false
+        activationState = .active
+        setupRequired = false
         status = String(localized: "Disconnected")
         await connection.disconnect()
     }
@@ -131,6 +186,8 @@ final class ClientModel {
     /// Called synchronously when macOS terminates the application.
     func terminate() {
         pollTask?.cancel()
+        eventTask?.cancel()
+        approvalTask?.cancel()
         connection.terminate()
     }
 
@@ -166,6 +223,25 @@ final class ClientModel {
         guard let data = defaults.data(forKey: "assistant.services.\(instance)") else { return }
         let snapshot = try JSONDecoder().decode(ServiceSnapshot.self, from: data)
         services = snapshot.services; servicesUpdatedAt = snapshot.updatedAt
+    }
+
+    /// Records explicit activation outcomes separately from whether a draft has been saved.
+    func recordActivation(_ state: ActivationState) {
+        guard let instance = health?.instanceID else { return }
+        activationState = state
+        defaults.set(state.rawValue, forKey: "assistant.activation.\(instance)")
+    }
+
+    /// Unread updates remain visible independently of the active conversation filter.
+    var unreadUpdates: Int {
+        activityUpdates.filter { $0.instanceID == health?.instanceID && $0.createdAt > updatesSeenAt }.count
+    }
+
+    /// Opening Updates acknowledges local presentation, not server delivery or approval decisions.
+    func markUpdatesSeen() {
+        guard let instance = health?.instanceID else { return }
+        updatesSeenAt = Date()
+        defaults.set(updatesSeenAt.timeIntervalSince1970, forKey: "assistant.updatesSeen.\(instance)")
     }
 
     /// Performs side-effect-free configuration previews and typed domain queries.
@@ -223,6 +299,10 @@ final class ClientModel {
             throw ClientError.operationFailed(
                 operation.error ?? String(localized: "Operation \(operation.id) ended as \(operation.state). Inspect current state before retrying.")
             )
+        }
+        if action == "service.lifecycle", payload["service"] == nil,
+           ["start", "apply"].contains(payload["action"]?.string ?? "") {
+            recordActivation(.active)
         }
         guard let result = operation.result else { return .null }
         return result
@@ -304,12 +384,20 @@ final class ClientModel {
                 guard result.pollIntervalSeconds > 0, result.availabilityTimeoutSeconds > 0 else {
                     throw ClientError.malformedResponse
                 }
+                let known = Set(messages.map(\.id))
+                for message in result.messages where !known.contains(message.id) {
+                    await addUpdate(id: "delivery:\(message.id)", title: String(localized: "Assistant has an update"),
+                                    taskID: message.taskID, category: "replies")
+                }
                 merge(result.messages)
                 offeredIDs = result.messages.map(\.id)
                 lastPoll = Date()
                 pollingError = nil
                 status = String(localized: "Connected")
                 failures = 0
+                if !liveUpdates, lastApprovalRefresh.map({ Date().timeIntervalSince($0) >= 30 }) ?? true {
+                    requestApprovalRefresh(generation: current)
+                }
                 try await Task.sleep(for: .seconds(result.pollIntervalSeconds))
             } catch {
                 guard generation == current, !Task.isCancelled else { return }
@@ -326,6 +414,7 @@ final class ClientModel {
                         guard generation == current else { return }
                         try verified.validate(expectedInstance: instance)
                         api = replacement
+                        startEvents(generation: current)
                     } catch {
                         pollingError = error.presentableMessage
                     }
@@ -337,11 +426,138 @@ final class ClientModel {
         }
     }
 
+    /// A disconnected event stream leaves lease polling active and reconnects with its last cursor.
+    private func startEvents(generation current: UUID) {
+        eventTask?.cancel()
+        guard health?.capabilities.contains("events.stream") == true else { return }
+        eventTask = Task { [weak self] in
+            guard let self else { return }
+            var cursor = eventCursor
+            var failures = 0
+            while !Task.isCancelled && generation == current {
+                let revisionBefore = liveRevision
+                do {
+                    guard let api else { return }
+                    try await api.events(after: cursor) { [weak self] event in
+                        await self?.receiveEvent(event, generation: current)
+                    }
+                } catch {
+                    guard !Task.isCancelled, generation == current else { return }
+                    liveUpdates = false
+                    liveUpdateError = String(localized: "Live updates paused. Checking periodically.")
+                    if liveRevision != revisionBefore { failures = 0 }
+                    if error.presentableMessage != nil, failures == 0 {
+                        await addUpdate(id: "events:\(current.uuidString)",
+                                        title: String(localized: "Live updates paused. Checking periodically."),
+                                        taskID: nil, category: "errors")
+                    }
+                    failures += 1
+                }
+                cursor = eventCursor
+                if liveUpdates { failures = 0 }
+                do { try await Task.sleep(for: .seconds(min(30, pow(2, Double(min(failures, 5)))))) }
+                catch { return }
+            }
+        }
+    }
+
+    private var eventCursor: String?
+
+    /// Event data is only an invalidation; ordinary reads remain authoritative.
+    private func receiveEvent(_ event: ManagementEvent, generation current: UUID) {
+        guard !Task.isCancelled, generation == current else { return }
+        eventCursor = event.id
+        liveUpdates = event.kind != "server.unavailable"
+        liveUpdateError = liveUpdates ? nil : String(localized: "Server updates are temporarily unavailable.")
+        if event.kind == "resync" || event.kind == "approvals.changed" {
+            requestApprovalRefresh(generation: current)
+        }
+        if liveUpdates && event.kind != "approvals.changed" { liveRevision += 1 }
+    }
+
+    /// Approval reads can create review references, so they stay on the isolated API executor.
+    private func requestApprovalRefresh(generation current: UUID) {
+        guard health?.capabilities.contains("approvals.read") == true else { return }
+        if approvalTask != nil { approvalRefreshPending = true; return }
+        approvalTask = Task { [weak self] in
+            guard let self else { return }
+            defer { if generation == current { approvalTask = nil } }
+            repeat {
+                approvalRefreshPending = false
+                do {
+                    let result = try await read("approvals")
+                    guard generation == current, !Task.isCancelled else { return }
+                    guard let rows = result["approvals"]?.array else { throw ClientError.malformedResponse }
+                    let pending = rows.filter { $0["actionable"] == .bool(true) }
+                    pendingApprovals = pending.count
+                    lastApprovalRefresh = Date()
+                    for approval in pending {
+                        guard let id = approval["approval_id"]?.string,
+                              let version = approval["version"]?.string else { throw ClientError.malformedResponse }
+                        await addUpdate(id: "approval:\(id):\(version)", title: String(localized: "Approval requested"),
+                                        taskID: nil, category: "approvals")
+                    }
+                } catch {
+                    if generation == current, let message = error.presentableMessage { self.error = message }
+                    return
+                }
+            } while approvalRefreshPending && generation == current && !Task.isCancelled
+        }
+    }
+
+    /// Records useful updates even when native notifications are disabled or the app is in front.
+    func addUpdate(id: String, title: String, taskID: Int?, category: String) async {
+        guard let instance = health?.instanceID else { return }
+        let identifier = "\(instance):\(id)"
+        guard notificationIDs.insert(identifier).inserted else { return }
+        notificationOrder.append(identifier)
+        if notificationOrder.count > 1000 {
+            let expired = notificationOrder.removeFirst()
+            notificationIDs.remove(expired)
+        }
+        activityUpdates.insert(ActivityUpdate(id: identifier, instanceID: instance, title: title,
+                                             taskID: taskID, createdAt: Date(), category: category), at: 0)
+        activityUpdates = Array(activityUpdates.prefix(100))
+        defaults.set(notificationOrder, forKey: "assistant.notified")
+        do {
+            defaults.set(try JSONEncoder().encode(activityUpdates), forKey: "assistant.activity")
+            guard defaults.bool(forKey: "assistant.notifications"),
+                  defaults.object(forKey: "assistant.notifications.\(category)") as? Bool ?? true,
+                  !NSApp.isActive else { return }
+            let content = UNMutableNotificationContent()
+            content.title = String(localized: "Assistant")
+            content.body = category == "errors" ? String(localized: "Something needs your attention.") : title
+            content.userInfo = ["instance": instance, "category": category]
+            if let taskID { content.userInfo["task"] = taskID }
+            try await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
+        } catch { self.error = String(localized: "Notification could not be saved or delivered: \(error.localizedDescription)") }
+    }
+
+    /// Asks only when the person explicitly enables notifications in App settings.
+    func enableNotifications() async {
+        do {
+            let allowed = try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .badge])
+            defaults.set(allowed, forKey: "assistant.notifications")
+            if !allowed { error = String(localized: "Notifications are not enabled. In-app updates remain available.") }
+        } catch { self.error = error.presentableMessage }
+    }
+
     /// Replaces repeated deliveries without persisting private conversation content.
     private func merge(_ incoming: [ClientMessage]) {
         var indexed = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
         for message in incoming { indexed[message.id] = message }
         messages = indexed.values.sorted { $0.id < $1.id }
+    }
+
+    /// Retained in-app feedback stores no message bodies or transport credentials.
+    struct ActivityUpdate: Codable, Identifiable {
+        let id: String
+        let instanceID: String
+        let title: String
+        let taskID: Int?
+        let createdAt: Date
+        let category: String?
     }
 
     /// Updates an operation without duplicating the same server ID.

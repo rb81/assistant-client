@@ -8,18 +8,20 @@ struct ContentView: View {
     @State private var confirmingDiscard = false
     @State private var nextDestination: Destination?
     @State private var disconnectAfterDiscard = false
+    @State private var showingStatus = false
 
     /// Each destination has a stable native sidebar identity.
     enum Destination: String, CaseIterable, Identifiable {
-        case inbox, services, data, configuration
+        case inbox, reminders, services, data, configuration
         var id: String { rawValue }
 
         /// Localized section names are collected by Xcode string extraction.
         var title: String {
             switch self {
             case .inbox: return String(localized: "Chats")
+            case .reminders: return String(localized: "Reminders")
             case .configuration: return String(localized: "Settings")
-            case .services: return String(localized: "Server Health")
+            case .services: return String(localized: "Connection & Support")
             case .data: return String(localized: "Data")
             }
         }
@@ -28,7 +30,8 @@ struct ContentView: View {
         var symbol: String {
             switch self {
             case .inbox: return "bubble.left.and.bubble.right"
-            case .configuration: return "slider.horizontal.3"
+            case .reminders: return "clock"
+            case .configuration: return "gearshape"
             case .services: return "server.rack"
             case .data: return "externaldrive"
             }
@@ -38,25 +41,40 @@ struct ContentView: View {
     /// Routes only supported UI operations through the shared native model.
     var body: some View {
         NavigationSplitView {
-            List(Destination.allCases, selection: Binding(get: { selection }, set: navigate)) { destination in
-                Label(destination.title, systemImage: destination.symbol).tag(destination)
-                    .padding(.vertical, 7)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 9) {
+                    Image(systemName: "point.3.connected.trianglepath.dotted").foregroundStyle(Theme.accent)
+                    Text("Assistant").font(.headline)
+                }.padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 28)
+                VStack(spacing: 6) {
+                    ForEach([Destination.inbox, .reminders]) { destination in
+                        Button { navigate(destination) } label: {
+                            Label(destination.title, systemImage: destination.symbol)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(DestinationButtonStyle(selected: selection == destination))
+                        .accessibilityIdentifier("nav-\(destination.rawValue)")
+                        .accessibilityAddTraits(selection == destination ? .isSelected : [])
+                    }
+                }.padding(.horizontal, 10)
+                Spacer(minLength: 24)
             }
-            .navigationTitle("Assistant")
+            .background(Theme.panel)
             .navigationSplitViewColumnWidth(min: Theme.sidebarMinimum, ideal: Theme.sidebarIdeal, max: Theme.sidebarMaximum)
             .disabled(model.configurationApplying)
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 9) {
                     Divider().padding(.bottom, 3)
-                    StatusBadge(title: model.status, tone: model.health == nil ? .gray : model.pollingError == nil ? .green : .orange)
-                    if model.health != nil {
-                        Text(model.profile.name).font(.callout.weight(.semibold)).lineLimit(1)
-                        Text(model.profile.local ? String(localized: "This Mac") : model.profile.host)
-                            .font(.caption).lineLimit(1).truncationMode(.middle)
-                    }
-                    if let lastPoll = model.lastPoll {
-                        Label("Updated \(lastPoll.formatted(date: .omitted, time: .standard))", systemImage: "clock")
-                            .font(.caption2).lineLimit(1)
+                    HStack {
+                        statusControl
+                        Spacer(minLength: 0)
+                        Button { navigate(.configuration) } label: {
+                            Label("Settings", systemImage: Destination.configuration.symbol).labelStyle(.iconOnly)
+                        }
+                        .buttonStyle(.borderless)
+                        .help("Settings")
+                        .accessibilityIdentifier("nav-configuration")
+                        .accessibilityAddTraits(selection == .configuration ? .isSelected : [])
                     }
                 }
                 .foregroundStyle(Theme.secondary)
@@ -67,13 +85,16 @@ struct ContentView: View {
             }
         } detail: {
             VStack(spacing: 0) {
-                if let error = model.error { ErrorBanner(message: error).padding() }
-                if let error = model.pollingError { ErrorBanner(message: error).padding() }
                 if model.health == nil {
                     disconnected
                 } else {
                     switch selection ?? .inbox {
-                    case .inbox: InboxView(model: model)
+                    case .inbox: InboxView(model: model, chat: model.chats)
+                    case .reminders:
+                        InboxView(model: model, chat: model.reminderRuns, isReminders: true) { reminder in
+                            model.chats.newChat(about: reminder)
+                            navigate(.inbox)
+                        }
                     case .configuration: ConfigurationView(model: model)
                     case .services: ServicesView(model: model)
                     case .data: DataManagementView(model: model)
@@ -102,6 +123,27 @@ struct ContentView: View {
             selection = .inbox
             model.chats.newChat()
         }
+        .onChange(of: model.setupRequired) {
+            if model.setupRequired { navigate(.configuration) }
+        }
+        .onChange(of: model.notificationRequest) {
+            guard !model.configurationDirty, !model.configurationApplying else {
+                model.error = String(localized: "Save or discard your settings draft before opening this update.")
+                return
+            }
+            selection = .inbox
+            if let task = model.notificationTaskID {
+                Task {
+                    do {
+                        let task = try await model.chats.chatTask(model, id: task)
+                        let scheduled = task.threadID.hasPrefix("reminder:")
+                        navigate(scheduled ? .reminders : .inbox)
+                        try await (scheduled ? model.reminderRuns : model.chats).openTask(task, model: model)
+                    }
+                    catch { model.error = error.presentableMessage }
+                }
+            }
+        }
         .sheet(isPresented: $showingConnection) {
             ConnectionView(model: model, isPresented: $showingConnection)
         }
@@ -113,6 +155,38 @@ struct ContentView: View {
                 disconnectAfterDiscard = false
             }
             Button("Keep editing", role: .cancel) { disconnectAfterDiscard = false }
+        }
+    }
+
+    /// Connection, data, and support tools stay out of the way until needed.
+    private var statusControl: some View {
+        Button { showingStatus.toggle() } label: {
+            StatusBadge(title: model.status, tone: model.health == nil ? .gray :
+                        model.error != nil || model.pollingError != nil || model.liveUpdateError != nil ? .orange : .green)
+        }
+        .buttonStyle(.plain)
+        .help("Connection & Support")
+        .accessibilityIdentifier("nav-connection")
+        .popover(isPresented: $showingStatus) {
+            VStack(alignment: .leading, spacing: 12) {
+                if let issue = model.error ?? model.pollingError ?? model.liveUpdateError {
+                    ErrorBanner(message: issue)
+                    if model.error != nil { Button("Dismiss notice") { model.error = nil } }
+                }
+                if model.health != nil {
+                    Text(model.profile.name).font(.headline)
+                    Text(model.liveUpdates ? "Live updates are on" : "Checking for updates")
+                        .foregroundStyle(Theme.secondary)
+                    ForEach([Destination.services, .data]) { destination in
+                        Button { showingStatus = false; navigate(destination) } label: {
+                            Label(destination.title, systemImage: destination.symbol)
+                        }.accessibilityIdentifier("nav-\(destination.rawValue)")
+                    }
+                } else {
+                    Button("Connect") { showingStatus = false; showingConnection = true }
+                }
+            }
+            .padding().frame(width: 340, alignment: .leading)
         }
     }
 
@@ -136,9 +210,9 @@ struct ContentView: View {
             Text("Connect to Assistant through SSH, or use an installation on this Mac.")
                 .foregroundStyle(Theme.secondary)
             Button("Connect to Assistant") { showingConnection = true }
-                .buttonStyle(CopperButtonStyle()).disabled(model.busy)
+                .buttonStyle(PrimaryButtonStyle()).disabled(model.busy)
                 .accessibilityIdentifier("connect-button")
-            if model.busy { ProgressView() }
+            StableProgress(active: model.busy)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
     }
@@ -186,7 +260,7 @@ struct ConnectionView: View {
                         if model.health != nil { isPresented = false }
                     }
                 }
-                .buttonStyle(CopperButtonStyle()).keyboardShortcut(.defaultAction)
+                .buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.defaultAction)
             }
         }
         .padding(24).frame(width: 520)

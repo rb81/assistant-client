@@ -9,9 +9,10 @@ struct ChatTask: Decodable, Identifiable, Sendable {
     let status: String
     let updatedAt: String
     let lastError: String?
+    var sourceChannel: String? = nil
 
     private enum CodingKeys: String, CodingKey {
-        case id, taskSummary, status, updatedAt, lastError
+        case id, taskSummary, status, updatedAt, lastError, sourceChannel
         case threadID = "threadId"
     }
 
@@ -34,6 +35,7 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     var subject: String? = nil
     var id: String { "\(kind):\(channel):\(wireID)" }
     var incoming: Bool { kind == "request" }
+    var scheduled: Bool { incoming && channel == "reminder" }
 
     private enum CodingKeys: String, CodingKey {
         case wireID = "id"
@@ -76,6 +78,7 @@ struct Conversation: Codable, Identifiable, Sendable, Equatable {
     var workstreamNameStatus: String? = nil
 
     var id: String { threadID }
+    var scheduled: Bool { threadID.hasPrefix("reminder:") }
 
     private enum CodingKeys: String, CodingKey {
         case channel, messageCount, openingMessage, lastActivityAt, latestTaskStatus, latestTaskSummary
@@ -86,6 +89,7 @@ struct Conversation: Codable, Identifiable, Sendable, Equatable {
 
     /// The first line of what the person asked, which reads better than a generated task summary.
     var title: String {
+        if scheduled { return latestTaskSummary ?? String(localized: "Scheduled reminder") }
         let line = openingMessage.split(whereSeparator: \.isNewline).first.map(String.init)?
             .trimmingCharacters(in: .whitespaces) ?? ""
         if !line.isEmpty { return line.count > 90 ? String(line.prefix(89)) + "…" : line }
@@ -239,6 +243,7 @@ private struct ConversationCache: Codable {
     var conversations: [Conversation]
     var transcripts: [String: CachedTranscript]
     var readVersions: [String: String]? = nil
+    var scope: String? = nil
 }
 
 /// Server-backed conversations retain unsent text only in this connection's memory.
@@ -254,7 +259,11 @@ final class ConversationModel {
     var draft = ""
     var research = false
     var search = ""
-    var channel = ""
+    var channel = "" {
+        didSet {
+            if let cacheKey { defaults.set(channel, forKey: "\(cacheKey).scope") }
+        }
+    }
     var messages: [ChatMessage] = []
     var toolCalls: [ToolCall] = []
     var activityTruncated = false
@@ -279,6 +288,8 @@ final class ConversationModel {
     private var cacheKey: String?
     private var generation = UUID()
     private var refreshVersion = 0
+    private var liveRefreshTask: Task<Void, Never>?
+    private var liveRefreshPending = false
     private var transcriptLoaded = false
     private(set) var renderedVersion: String?
     private var deliveries: [String: [Int]] = [:]
@@ -286,7 +297,12 @@ final class ConversationModel {
     private var activityUnsupported = false
 
     /// Injectable preferences keep tests and UI fixtures separate from the user's cached conversations.
-    init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+    private let reminderHistory: Bool
+
+    init(defaults: UserDefaults = .standard, reminderHistory: Bool = false) {
+        self.defaults = defaults
+        self.reminderHistory = reminderHistory
+    }
 
     /// Reconnect and relaunch restore transcripts only after the server identity has been verified.
     func restoreCache(instance: String) throws {
@@ -294,11 +310,13 @@ final class ConversationModel {
         guard cacheKey != key else { return }
         clear()
         cacheKey = key
+        let savedScope = defaults.string(forKey: "\(key).scope") ?? ""
+        channel = ["", "client", "telegram", "email"].contains(savedScope) ? savedScope : ""
         guard let data = defaults.data(forKey: key) else { return }
         let saved = try JSONDecoder().decode(ConversationCache.self, from: data)
         cache = saved.transcripts
         readVersions = saved.readVersions ?? [:]
-        conversations = saved.conversations
+        conversations = (saved.scope ?? "") == channel ? saved.conversations.filter { !$0.scheduled } : []
         savedConversations = Dictionary(uniqueKeysWithValues: conversations.map { ($0.threadID, $0) })
         totalConversations = conversations.count
     }
@@ -317,9 +335,8 @@ final class ConversationModel {
 
     private func persistCache() throws {
         guard let cacheKey else { return }
-        let sorted = savedConversations.values.sorted(by: Self.newestFirst)
         defaults.set(try JSONEncoder().encode(ConversationCache(
-            conversations: sorted, transcripts: cache, readVersions: readVersions
+            conversations: conversations, transcripts: cache, readVersions: readVersions, scope: channel
         )), forKey: cacheKey)
     }
 
@@ -357,9 +374,12 @@ final class ConversationModel {
 
     /// Resets all remote content when connection identity changes.
     func clear() {
+        liveRefreshTask?.cancel()
+        liveRefreshPending = false
         generation = UUID()
         refreshVersion += 1
         conversations = []; selectedThread = nil; draft = ""
+        cacheKey = nil
         search = ""; channel = ""; research = false
         totalConversations = 0; listPage = 0; listFetchedAt = nil; error = nil
         drafts = [:]; cache = [:]; savedConversations = [:]; readVersions = [:]; cacheKey = nil
@@ -370,11 +390,15 @@ final class ConversationModel {
     }
 
     /// New chats deliberately omit a workstream identifier.
-    func newChat() {
+    func newChat(about reminder: Conversation? = nil) {
         refreshVersion += 1
         drafts[selectedThread ?? "new"] = draft
         selectedThread = nil
         draft = drafts["new"] ?? ""
+        if let reminder {
+            let reference = String(localized: "About scheduled run #\(reminder.latestTaskID) (\(reminder.title)): ")
+            draft = draft.isEmpty ? reference : draft + "\n\n" + reference
+        }
         resetTranscript()
     }
 
@@ -425,14 +449,14 @@ final class ConversationModel {
         var components = URLComponents()
         components.queryItems = [URLQueryItem(name: "page", value: String(page)),
                                  URLQueryItem(name: "query", value: search),
-                                 URLQueryItem(name: "channel", value: channel)]
+                                 URLQueryItem(name: "channel", value: reminderHistory ? "reminder" : channel.isEmpty ? "chat" : channel)]
         loadingList = true
         defer { loadingList = false }
         let result: JSONValue
         do {
             result = try await model.read("conversations?\(components.percentEncodedQuery ?? "")")
-        } catch let error as ClientError where error.httpStatus == 404 {
-            throw ClientError.serverOutdated(String(localized: "the conversation list"))
+        } catch let error as ClientError where error.httpStatus == 404 || error.httpStatus == 422 {
+            throw ClientError.serverOutdated(String(localized: "separate chats and reminder history"))
         }
         guard current == generation, filter == (search, channel) else { return }
         let decoded = try Wire.decoder().decode(Page<Conversation>.self, from: JSONEncoder().encode(result))
@@ -459,6 +483,28 @@ final class ConversationModel {
         try await loadConversations(model)
     }
 
+    /// Bursts enqueue one follow-up refresh instead of repeatedly cancelling a slow in-flight read.
+    func refreshAfterEvent(_ model: ClientModel) {
+        liveRefreshPending = true
+        guard liveRefreshTask == nil else { return }
+        let current = generation
+        liveRefreshTask = Task { [weak self] in
+            guard let self else { return }
+            defer { liveRefreshTask = nil }
+            do {
+                try await Task.sleep(for: .milliseconds(150))
+                repeat {
+                    liveRefreshPending = false
+                    try await loadConversations(model)
+                    guard generation == current, !Task.isCancelled else { return }
+                    try await refresh(model)
+                } while liveRefreshPending && generation == current && !Task.isCancelled
+            } catch {
+                if generation == current { self.error = error.presentableMessage ?? self.error }
+            }
+        }
+    }
+
     /// Loads the newest transcript pages and tool calls for the selected conversation.
     /// - Parameter maxAge: when set, a cached transcript younger than this is shown without reading.
     func refresh(_ model: ClientModel, moreMessages: Bool = false, maxAge: Duration? = nil) async throws {
@@ -475,6 +521,35 @@ final class ConversationModel {
         loadingTranscript = !transcriptLoaded && messages.isEmpty && pendingMessage == nil
         defer {
             if selectedThread == thread, version == refreshVersion { loadingTranscript = false }
+        }
+        if !moreMessages, messagePages == 1, model.health?.capabilities.contains("tasks.snapshot") == true {
+            let snapshot = try await model.read("tasks/\(task)/snapshot")
+            guard selectedThread == thread, version == refreshVersion else { return }
+            guard let messageData = snapshot["messages"], let activityData = snapshot["activity"],
+                  let taskData = snapshot["task"] else { throw ClientError.malformedResponse }
+            let page = try Wire.decoder().decode(Page<ChatMessage>.self, from: JSONEncoder().encode(messageData))
+            let activity = try JSONDecoder().decode(ToolActivity.self, from: JSONEncoder().encode(activityData))
+            let status = try Wire.decoder().decode(ChatTask.self, from: JSONEncoder().encode(taskData))
+            messages = page.rows; totalMessages = page.total
+            toolCalls = activity.rows; activityTruncated = activity.truncated
+            transcriptLoaded = true; loadingTranscript = false
+            renderedVersion = Self.readVersion(selected)
+            if let index = conversations.firstIndex(where: { $0.threadID == thread }) {
+                conversations[index].latestTaskStatus = status.status
+            }
+            if selected.active && !status.active {
+                await model.addUpdate(id: "task:\(status.id):\(status.status)",
+                                      title: status.status == "completed" ? String(localized: "Task completed") :
+                                        String(localized: "Task needs attention"),
+                                      taskID: status.id, category: status.status == "completed" ? "replies" : "errors")
+            }
+            if let pendingRequestID, pendingThread == thread,
+               messages.contains(where: { $0.incoming && $0.channel == "client" && $0.wireID == pendingRequestID }) {
+                pendingMessage = nil
+            }
+            try remember(thread)
+            error = nil
+            return
         }
         // Start from the last known page so a quiet conversation costs one read per refresh.
         var lastPage = max(0, (totalMessages - 1) / Self.messagePageSize)
@@ -551,15 +626,30 @@ final class ConversationModel {
         return try Wire.decoder().decode(Page<ChatMessage>.self, from: JSONEncoder().encode(result))
     }
 
-    private func chatTask(_ model: ClientModel, id: Int) async throws -> ChatTask {
+    func chatTask(_ model: ClientModel, id: Int) async throws -> ChatTask {
         let record = try await model.read("records/tasks/\(id)")
         guard let row = record["rows"]?.array?.first else { throw ClientError.malformedResponse }
         return try Wire.decoder().decode(ChatTask.self, from: JSONEncoder().encode(row))
     }
 
+    /// Opens an update's task even when its conversation is outside the current list page.
+    func openTask(_ task: ChatTask, model: ClientModel) async throws {
+        if let existing = conversations.first(where: { $0.threadID == task.threadID }) {
+            select(existing)
+        } else {
+            let row = Conversation(threadID: task.threadID, channel: task.sourceChannel ?? "unknown", messageCount: 0,
+                                   openingMessage: "", lastActivityAt: task.updatedAt, latestTaskID: task.id,
+                                   latestTaskStatus: task.status, latestTaskSummary: task.taskSummary, workstreamTitle: nil)
+            conversations.insert(row, at: 0)
+            select(row)
+        }
+        try await refresh(model)
+    }
+
     /// Submits new requests or replies with the current client identity, never replaying an uncertain write.
     func send(_ model: ClientModel) async {
-        guard !sending, let clientID = model.clientID else { return }
+        guard !sending, !reminderHistory, selectedThread?.hasPrefix("reminder:") != true,
+              let clientID = model.clientID else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, selected?.deleted != true else { return }
         sending = true

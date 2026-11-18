@@ -32,7 +32,7 @@ struct ChatAttachmentView: View {
                     }
                 }
                 Spacer()
-                if loading { ProgressView().controlSize(.small) }
+                StableProgress(active: loading)
                 if attachment.audio && player == nil {
                     Button("Load audio", systemImage: "play.circle") { Task { await loadAudio() } }
                         .disabled(source == nil || loading)

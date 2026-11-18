@@ -69,13 +69,13 @@ struct MutationReview: View {
                 }
             }
             HStack {
-                if sending { ProgressView().controlSize(.small) }
+                StableProgress(active: sending)
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Confirm") {
                     sending = true
                     Task { await submit(); dismiss() }
-                }.buttonStyle(CopperButtonStyle())
+                }.buttonStyle(PrimaryButtonStyle())
             }
         }
         .padding(24).frame(width: 680, height: 520).disabled(sending)

@@ -54,7 +54,7 @@ and [TN3179](https://developer.apple.com/documentation/technotes/tn3179-understa
 Use **Product > Test** for unit tests and disconnected/connected UI tests.
 Inject `ManagementAPI` fixtures; do not use production credentials or SSH hosts.
 The explicit Debug-only connected fixture covers navigation, sending, code
-copying, reviewed settings saves, YAML editor access, and safe deletion in
+copying, reviewed source-free settings saves, local notification controls, and safe deletion in
 light/dark appearances. Screenshots remain in the test result bundle.
 
 App-target Canvas previews are unavailable with debug-dylib mode disabled.
@@ -103,9 +103,22 @@ Closing the client never stops services.
 
 Unread markers are local to this Mac and separate from delivery acknowledgments.
 Service inventories are cached per installation and refreshed every ten seconds
-while Server Health is open; cached statuses are not proof of current health.
+while Connection & Support is open; cached statuses are not proof of current health.
 Attachment downloads require the server to return a current SHA-256 digest,
 including for project files whose tracking metadata has no digest.
+
+Negotiate `tasks.snapshot` and `events.stream` for pooled newest-page snapshots
+and resumable SSE invalidations over the existing SSH tunnel. Coalesce event
+bursts; keep delivery polling for availability leases, acknowledgments, and
+fallback. Notification metadata is installation-scoped, deduplicated and bounded;
+message bodies are excluded. Native alerts require opt-in and do not work after
+the app quits.
+
+Settings require `configuration.structured`, load a source-free catalog, then
+effective values by owning page. Standing instructions load separately.
+Never restore a raw-source fallback for older servers. Local App preferences
+do not enter server drafts. Pending/uncertain activation is separate from dirty
+state and survives relaunch.
 
 Remote Markdown uses native text views: HTML/scripts and remote images are not
 executed or loaded. Diagnostics remain selectable technical details, not the
@@ -113,12 +126,9 @@ primary interface.
 
 ## Design and assets
 
-Ink & Copper assets supply light/dark colors. UI text uses system fonts.
-Terminal output uses `JetBrainsMonoNF-Regular` if installed, otherwise reports a
-system monospace fallback. The app does not download fonts.
-
-JetBrains Mono Nerd Font is optional and not vendored; redistribution requires
-its upstream and patched icon-license notices. The icon source is
+Asset colors adapt the indigo accent and neutral surfaces to light and dark
+appearances. The UI uses the macOS system font, with system monospace for
+diagnostic output. The icon source is
 `Assistant/Assistant/Resources/AssistantMark.svg`; exported PNG sizes are in the asset catalog.
 
 ## Release checklist

@@ -249,18 +249,20 @@ struct SettingGroup: Decodable, Identifiable, Sendable, Hashable {
     let parent: String?
     var section: String?
     let basic: Bool
+    var destination: String? = nil
 }
 
 /// Revision-bound settings and instructions used for preview/confirmed saves.
 struct FullConfiguration: Decodable, Sendable {
     let revision: String
     let setupComplete: Bool
-    let settings: [SettingField]
-    let instructions: String
+    var settings: [SettingField]
+    var instructions: String
     let setupNotice: String
     var groups: [SettingGroup]?
     var agentYaml: String?
     var agentYamlBackups: [String]?
+    var instructionsConfigured: Bool?
 }
 
 /// Acknowledgments confirm delivery, not whether a human read the message.

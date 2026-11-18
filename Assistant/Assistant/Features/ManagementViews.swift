@@ -33,47 +33,79 @@ struct ServicesView: View {
     @State private var logService: String?
     @State private var showingOperations = false
 
+    private var unresolved: [OperationReference] {
+        model.references.filter { $0.instanceID == model.health?.instanceID }
+            .sorted { $0.submittedAt > $1.submittedAt }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                PageHeading(title: "Server Health", subtitle: "Your installation at a glance. Check services, inspect logs, and restart deliberately.")
+                PageHeading(title: "Connection & Support", subtitle: "Check whether Assistant is ready and get help when something stops working.")
                 HStack {
                     StatusBadge(title: model.status, tone: model.pollingError == nil ? .green : .orange)
                     Text(model.profile.name).font(.headline)
+                    StableProgress(active: model.servicesLoading)
                     Spacer()
                     Button("Operation history", systemImage: "clock.arrow.circlepath") { showingOperations = true }
-                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
+                    Button(model.servicesError == nil ? "Refresh" : "Retry", systemImage: "arrow.clockwise") { Task { await load() } }
                         .disabled(busy || model.servicesLoading)
                 }
                 if let error { ErrorBanner(message: error) }
-                if let error = model.servicesError { ErrorBanner(message: error) }
-                if model.servicesLoading {
-                    ProgressView(model.services.isEmpty ? "Loading services…" : "Updating service health…")
+                if let error = model.servicesError {
+                    Label(model.services.isEmpty ? "Can’t check Assistant’s services right now." :
+                          "Can’t refresh service status. The results below are from the last successful check.",
+                          systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Text("Check that Docker is running on the computer that hosts Assistant, then retry.")
+                        .foregroundStyle(Theme.secondary)
+                    DisclosureGroup("Technical details") { ErrorBanner(message: error) }
                 }
-                if !model.references.filter({ $0.instanceID == model.health?.instanceID }).isEmpty {
-                    Label("Some operations have unresolved outcomes. Inspect operation history before retrying.",
-                          systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                if model.activationState != .active {
+                    Label(model.activationState == .pending ?
+                          String(localized: "Saved settings need applying. Review and apply when you are ready.") :
+                          String(localized: "Activation outcome needs checking. Inspect operation history before retrying."),
+                          systemImage: "exclamationmark.circle").foregroundStyle(.orange)
                 }
-                ManagementPanel {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Application services").font(.title3.weight(.semibold))
-                            Text("Bulk actions keep the management connection running.")
-                                .font(.callout).foregroundStyle(Theme.secondary)
+                if !unresolved.isEmpty {
+                    ManagementPanel {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Actions awaiting confirmation", systemImage: "exclamationmark.circle.fill")
+                                .font(.headline)
+                                .symbolRenderingMode(.hierarchical)
+                            Text("Assistant hasn’t confirmed whether these actions finished. Check the history before trying again.")
+                                .foregroundStyle(Theme.secondary)
+                            ForEach(unresolved.prefix(3)) { reference in
+                                OperationReceiptRow(reference: reference)
+                            }
+                            Button("Review operation history") { showingOperations = true }
                         }
-                        Spacer()
-                        Button("Apply saved settings") { lifecycle("apply") }
-                        Button("Restart all") { lifecycle("restart") }
-                        Button("Stop application", role: .destructive) { lifecycle("stop") }
                     }
                 }
-                ForEach(Array(model.services.enumerated()), id: \.offset) { _, service in serviceCard(service) }
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Services").font(Theme.sectionTitle).accessibilityAddTraits(.isHeader)
+                        if let refreshed = model.servicesUpdatedAt {
+                            Text("Last checked \(refreshed.formatted(date: .omitted, time: .standard))")
+                                .font(.caption.monospacedDigit()).foregroundStyle(Theme.secondary)
+                        }
+                    }
+                    Spacer()
+                    if model.activationState == .pending {
+                        Button("Apply saved settings") { lifecycle("apply") }
+                            .disabled(model.servicesError != nil)
+                    }
+                    Menu("Service actions") {
+                        Button("Start Assistant") { lifecycle("start") }
+                        Button("Restart Assistant") { lifecycle("restart") }
+                        Button("Stop Assistant", role: .destructive) { lifecycle("stop") }
+                    }.disabled(model.servicesError != nil)
+                }
+                ForEach(Array(model.services.enumerated()), id: \.offset) { _, service in
+                    serviceCard(service)
+                }
                 if model.services.isEmpty && !model.servicesLoading && model.servicesError == nil {
                     Text("No service statuses were returned.").foregroundStyle(Theme.secondary)
-                }
-                if let refreshed = model.servicesUpdatedAt {
-                    Text("Updated \(refreshed.formatted(date: .omitted, time: .standard)) · Health checks do not verify model or integration outcomes.")
-                        .font(.caption).foregroundStyle(Theme.secondary)
                 }
             }
             .frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity)
@@ -134,10 +166,12 @@ struct ServicesView: View {
                 HStack {
                     Button("View logs", systemImage: "text.alignleft") { logService = id }
                     Spacer()
-                    Button("Start") { lifecycle("start", service: id) }.disabled(state == "running")
-                    Button("Restart") { lifecycle("restart", service: id) }
-                    Button("Stop", role: .destructive) { lifecycle("stop", service: id) }
-                        .disabled(["management", "management-docker"].contains(id))
+                    HStack {
+                        Button("Start") { lifecycle("start", service: id) }.disabled(state == "running")
+                        Button("Restart") { lifecycle("restart", service: id) }
+                        Button("Stop", role: .destructive) { lifecycle("stop", service: id) }
+                            .disabled(["management", "management-docker"].contains(id))
+                    }.disabled(model.servicesError != nil)
                 }.font(.callout)
                 DisclosureGroup("Technical details") {
                     Text(health).font(.caption.monospaced()).textSelection(.enabled)
@@ -175,8 +209,9 @@ struct ResourceInspector: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let error { ErrorBanner(message: error) }
-            if loading { ProgressView("Loading…") }
             ScrollView { TerminalOutput(text: output) }
+                .accessibilityIdentifier("inspector-output")
+                .overlay(alignment: .topTrailing) { StableProgress(active: loading).padding(8) }
         }.padding().task(id: resource) {
             loading = true
             defer { loading = false }
@@ -202,6 +237,36 @@ enum ServiceLogFormatting {
     }
 }
 
+/// A saved receipt describes what was attempted without exposing the original request.
+private struct OperationReceiptRow: View {
+    let reference: OperationReference
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(operationTitle(reference.action)).font(.callout.weight(.semibold))
+            Text(reference.operationID == nil ? "No receipt from the server" : "Accepted; final result not confirmed")
+                .font(.caption).foregroundStyle(Theme.secondary)
+            Text(reference.submittedAt.formatted(date: .abbreviated, time: .shortened))
+                .font(.caption.monospacedDigit()).foregroundStyle(Theme.secondary)
+        }
+    }
+}
+
+private func operationTitle(_ action: String) -> String {
+    switch action {
+    case "configuration.save": return String(localized: "Save settings")
+    case "service.lifecycle": return String(localized: "Change Assistant service state")
+    case "task.start": return String(localized: "Start a chat")
+    case "task.reply": return String(localized: "Send a chat reply")
+    case "task.delete": return String(localized: "Delete chat task data")
+    case "research.start": return String(localized: "Start deep research")
+    case "approval.decide": return String(localized: "Submit an approval decision")
+    case "database.reset": return String(localized: "Reset Assistant data")
+    case "domain.mutate": return String(localized: "Change a workspace item")
+    default: return action.replacingOccurrences(of: ".", with: " ").capitalized
+    }
+}
+
 /// Durable mutation outcomes remain inspectable when a write response is uncertain.
 struct OperationsView: View {
     let model: ClientModel
@@ -216,11 +281,11 @@ struct OperationsView: View {
                 ForEach(model.references.filter { $0.instanceID == model.health?.instanceID }) { reference in
                     ManagementPanel {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text(reference.action).font(.headline)
-                            Text(reference.operationID ?? String(localized: "Submission outcome unknown"))
-                            Text("Inspect server state before retrying. Request bodies are not saved locally.")
-                                .font(.callout).foregroundStyle(Theme.secondary)
+                            OperationReceiptRow(reference: reference)
                             DisclosureGroup("Submission details") {
+                                if let operationID = reference.operationID {
+                                    Text(operationID).font(.caption.monospaced()).textSelection(.enabled)
+                                }
                                 Text(reference.key).font(.caption.monospaced()).textSelection(.enabled)
                             }
                         }
@@ -230,7 +295,7 @@ struct OperationsView: View {
                     ManagementPanel {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack {
-                                Text(operation.action).font(.headline)
+                                Text(operationTitle(operation.action)).font(.headline)
                                 Spacer()
                                 StatusBadge(title: operation.state, tone: operation.state == "succeeded" ? .green : .orange)
                             }

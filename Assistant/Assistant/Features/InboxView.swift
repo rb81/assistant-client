@@ -3,20 +3,26 @@ import SwiftUI
 /// A thread-first workspace with a readable transcript and a persistent in-memory composer.
 struct InboxView: View {
     let model: ClientModel
+    let chat: ConversationModel
+    var isReminders = false
+    var askAboutRun: ((Conversation) -> Void)? = nil
     @State private var showingApprovals = false
     @State private var showingUpdates = false
+    @State private var showingSchedule = false
     @State private var deletionPreview: JSONValue?
     @State private var scrollState = TranscriptScrollState()
     @State private var loadingEarlier = false
-    @AppStorage("chats.showToolCalls") private var showToolCalls = true
+    @State private var confirmingRoute = false
+    @State private var searchReady = false
+    @State private var expandedInstructions: Set<String> = []
+    @AppStorage("chats.showToolCalls") private var showToolCalls = false
     @Environment(\.scenePhase) private var scenePhase
-
-    private var chat: ConversationModel { model.chats }
 
     /// A new client delivery for the open conversation refreshes it immediately instead of waiting.
     private struct TranscriptTrigger: Hashable {
         let thread: String?
         let deliveries: [Int]
+        let revision: Int
     }
 
     /// Deliveries for the selected conversation's task, used to refresh it as soon as a reply arrives.
@@ -61,14 +67,26 @@ struct InboxView: View {
                 transcriptHeader
                 Divider()
                 if let error = chat.error { ErrorBanner(message: error).padding() }
-                transcript
+                transcript.frame(maxHeight: .infinity)
                 Divider()
-                composer
+                if isReminders {
+                    HStack {
+                        Label("Scheduled runs are read-only", systemImage: "lock")
+                            .font(.caption).foregroundStyle(Theme.secondary)
+                        Spacer()
+                        if let selected = chat.selected {
+                            Button("Ask about this run") { askAboutRun?(selected) }
+                                .disabled(model.chats.sending)
+                        }
+                    }.frame(height: 32).padding(12).background(Theme.panel)
+                } else {
+                    composer.fixedSize(horizontal: false, vertical: true)
+                }
             }.frame(minWidth: 420)
         }
-        .task(id: model.messages.last?.id) {
+        .task {
             // Returning to Chats shows the list already in memory instead of reloading it straight away.
-            if chat.listIsFresh && model.messages.isEmpty {
+            if model.liveRevision == 0 && chat.listIsFresh && model.messages.isEmpty {
                 do { try await Task.sleep(for: ConversationModel.listRefresh) } catch { return }
             }
             while !Task.isCancelled {
@@ -77,10 +95,11 @@ struct InboxView: View {
                 do { try await Task.sleep(for: ConversationModel.listRefresh) } catch { return }
             }
         }
-        .task(id: TranscriptTrigger(thread: chat.selectedThread, deliveries: assistantDeliveries)) {
+        .onChange(of: model.liveRevision) { chat.refreshAfterEvent(model) }
+        .task(id: TranscriptTrigger(thread: chat.selectedThread, deliveries: assistantDeliveries, revision: 0)) {
             guard chat.selectedThread != nil else { return }
             // A cached transcript is shown as-is unless it is stale or a new reply has just arrived.
-            var reuseCache = !chat.noteDeliveries(assistantDeliveries)
+            var reuseCache = model.liveRevision == 0 && !chat.noteDeliveries(assistantDeliveries)
             while !Task.isCancelled {
                 let delay = chat.selected?.active == true ? ConversationModel.activeRefresh : ConversationModel.idleRefresh
                 do { try await chat.refresh(model, maxAge: reuseCache ? delay : nil) }
@@ -100,35 +119,64 @@ struct InboxView: View {
             deletionReview
         }
         .sheet(isPresented: $showingUpdates) { updates }
+        .sheet(isPresented: $showingSchedule) { ReminderScheduleView(model: model) }
+        .task(id: model.notificationApprovals) {
+            if model.notificationApprovals {
+                showingApprovals = true
+                model.notificationApprovals = false
+            }
+        }
+        .confirmationDialog("Continue this conversation in Assistant?", isPresented: $confirmingRoute, titleVisibility: .visible) {
+            Button("Continue here") { Task { await chat.send(model) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This sends your message through this client, not email or Telegram. It can change where the assistant sends future replies in this conversation.")
+        }
     }
 
     /// Search and channel filters go to the server so older conversations remain discoverable.
     private var threadList: some View {
-        @Bindable var chat = model.chats
+        @Bindable var chat = self.chat
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Conversations").font(.headline)
-                if chat.loadingList { ProgressView().controlSize(.small) }
+                Text(isReminders ? "Run history" : "Conversations").font(.headline)
+                StableProgress(active: chat.loadingList)
                 Spacer()
-                Button { chat.newChat() } label: { Image(systemName: "square.and.pencil") }
-                    .help("New chat (Command-N)").accessibilityLabel("New chat")
-                    .disabled(chat.sending)
-            }
-            TextField("Search conversations", text: $chat.search)
-                .textFieldStyle(.roundedBorder)
-                .onSubmit { reloadConversations() }
-            Picker("Channel", selection: $chat.channel) {
-                Text("All channels").tag("")
-                ForEach(["client", "telegram", "email"], id: \.self) { channel in
-                    Text(Conversation.channelTitle(channel)).tag(channel)
+                if !isReminders {
+                    Button { chat.newChat() } label: { Image(systemName: "square.and.pencil") }
+                        .help("New chat (Command-N)").accessibilityLabel("New chat")
+                        .disabled(chat.sending)
                 }
             }
-            .labelsHidden()
-            .onChange(of: chat.channel) { reloadConversations() }
+            if isReminders {
+                Button("View schedule", systemImage: "calendar") { showingSchedule = true }
+            }
+            TextField(isReminders ? "Search reminder runs" : "Search conversations", text: $chat.search)
+                .textFieldStyle(.roundedBorder)
+                .task(id: chat.search) {
+                    guard searchReady else { searchReady = true; return }
+                    do {
+                        try await Task.sleep(for: .milliseconds(300))
+                        try await chat.searchConversations(model)
+                    } catch is CancellationError {}
+                    catch { chat.error = error.presentableMessage ?? chat.error }
+                }
+            if !isReminders {
+                Picker("Channel", selection: $chat.channel) {
+                    Text("All channels").tag("")
+                    ForEach(["client", "telegram", "email"], id: \.self) { channel in
+                        Text(Conversation.channelTitle(channel)).tag(channel)
+                    }
+                }
+                .labelsHidden()
+                .onChange(of: chat.channel) { reloadConversations() }
+            }
             ScrollView {
                 LazyVStack(spacing: 6) {
                     if chat.conversations.isEmpty && !chat.loadingList {
-                        Text(chat.search.isEmpty ? "Your conversations will appear here." : "No conversations match.")
+                        Text(isReminders ?
+                             (chat.search.isEmpty ? "Scheduled runs will appear here." : "No reminder runs match.") :
+                             (chat.search.isEmpty ? "Your conversations will appear here." : "No conversations match."))
                             .foregroundStyle(Theme.secondary).font(.callout).padding(.vertical, 24)
                     }
                     ForEach(chat.conversations) { conversation in
@@ -141,7 +189,7 @@ struct InboxView: View {
                         .accessibilityIdentifier("chat-thread-\(conversation.latestTaskID)")
                     }
                     if chat.conversations.count < chat.totalConversations {
-                        Button("Load older conversations") {
+                        Button(isReminders ? "Load older reminders" : "Load older conversations") {
                             Task {
                                 do { try await chat.loadConversations(model, older: true) }
                                 catch { chat.error = error.presentableMessage ?? chat.error }
@@ -150,17 +198,23 @@ struct InboxView: View {
                     }
                 }
             }
-            Button("Review approvals", systemImage: "checkmark.shield") { showingApprovals = true }
-                .font(.callout)
-            Button("Updates", systemImage: "bell") { showingUpdates = true }.font(.callout)
+            if !isReminders {
+                Button(model.pendingApprovals == 0 ? String(localized: "Review approvals") :
+                        String(localized: "Review approvals (\(model.pendingApprovals))"),
+                       systemImage: "checkmark.shield") { showingApprovals = true }
+                    .font(.callout)
+                Button(model.unreadUpdates == 0 ? String(localized: "Updates") :
+                        String(localized: "Updates (\(model.unreadUpdates))"), systemImage: "bell") { showingUpdates = true }
+                    .font(.callout)
+            }
         }.padding(16).background(Theme.panel.opacity(0.6))
     }
 
     /// Restarts paging whenever the search text or channel filter changes.
     private func reloadConversations() {
         Task {
-            do { try await model.chats.searchConversations(model) }
-            catch { model.chats.error = error.presentableMessage ?? model.chats.error }
+            do { try await chat.searchConversations(model) }
+            catch { chat.error = error.presentableMessage ?? chat.error }
         }
     }
 
@@ -168,12 +222,12 @@ struct InboxView: View {
     private var transcriptHeader: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(chat.selected?.title ?? String(localized: "A fresh conversation"))
+                Text(chat.selected?.title ?? (isReminders ? String(localized: "Scheduled reminders") : String(localized: "A fresh conversation")))
                     .font(.headline).lineLimit(1)
                 if let selected = chat.selected {
                     Text("\(Conversation.channelTitle(selected.channel)) · \(selected.workstreamLabel)")
                         .font(.caption).foregroundStyle(Theme.secondary).lineLimit(1)
-                } else {
+                } else if !isReminders {
                     Text("Assistant keeps related work organized automatically.")
                         .font(.caption).foregroundStyle(Theme.secondary)
                 }
@@ -188,7 +242,7 @@ struct InboxView: View {
             if let selected = chat.selected {
                 StatusBadge(title: selected.latestTaskStatus.replacingOccurrences(of: "_", with: " ").capitalized,
                             tone: selected.deleted ? .gray : selected.active ? .orange : .green)
-                if !selected.deleted {
+                if !selected.deleted && !isReminders {
                     Button(role: .destructive) {
                         Task {
                             do {
@@ -271,10 +325,13 @@ struct InboxView: View {
 
     private var transcriptRows: some View {
         VStack(alignment: .leading, spacing: 24) {
-            if chat.selectedThread == nil && chat.pendingMessage == nil {
+            if isReminders && chat.selectedThread == nil {
+                ContentUnavailableView("Select a reminder", systemImage: "clock",
+                                       description: Text("See what Assistant did and where it sent the result."))
+            } else if chat.selectedThread == nil && chat.pendingMessage == nil {
                 VStack(alignment: .leading, spacing: 12) {
                     Image(systemName: "sparkle").font(.system(size: 34)).foregroundStyle(Theme.accent)
-                    Text("What shall we work on?").font(.system(size: 30, weight: .semibold, design: .rounded))
+                    Text("What shall we work on?").font(Theme.pageTitle)
                     Text("Ask a question, explore an idea, or hand over a task.")
                         .foregroundStyle(Theme.secondary)
                 }.padding(.vertical, 60)
@@ -302,11 +359,6 @@ struct InboxView: View {
             if chat.selected?.deleted == true {
                 Label("Deleted task. Conversation and shared data are preserved. This chat is read-only.",
                       systemImage: "lock").font(.callout).foregroundStyle(Theme.secondary)
-            } else if chat.selected?.active == true && !chat.loadingTranscript && !chat.sending {
-                HStack(spacing: 10) {
-                    ProgressView().controlSize(.small)
-                    Text("Working…").font(.callout).foregroundStyle(Theme.secondary)
-                }
             }
             Color.clear.frame(height: 1).id("transcript-end")
         }
@@ -326,8 +378,10 @@ struct InboxView: View {
         let pending = message.wireID == -1
         return VStack(alignment: .leading, spacing: 9) {
             HStack {
-                Label(message.incoming ? String(localized: "You") : model.health?.name ?? "Assistant",
-                      systemImage: message.incoming ? "person.crop.circle" : external ? "envelope.badge" : "sparkle")
+                Label(message.scheduled ? String(localized: "Scheduled run") :
+                        message.incoming ? String(localized: "You") : model.health?.name ?? "Assistant",
+                      systemImage: message.scheduled ? "clock" :
+                        message.incoming ? "person.crop.circle" : external ? "envelope.badge" : "sparkle")
                     .font(.callout.weight(.semibold))
                 if external {
                     Text("Sent externally").font(.caption.weight(.semibold)).foregroundStyle(.orange)
@@ -343,7 +397,15 @@ struct InboxView: View {
                     .font(.caption).foregroundStyle(Theme.secondary).textSelection(.enabled)
             }
             if let subject = message.subject, !subject.isEmpty { Text(subject).font(.callout.weight(.medium)) }
-            if let value = try? JSONValue.parse(message.body),
+            if message.scheduled {
+                let expanded = expandedInstructions.contains(message.id)
+                Button(expanded ? "Hide run instructions" : "Show run instructions",
+                       systemImage: expanded ? "chevron.down" : "chevron.right") {
+                    if expanded { expandedInstructions.remove(message.id) }
+                    else { expandedInstructions.insert(message.id) }
+                }.buttonStyle(.plain).foregroundStyle(Theme.secondary)
+                if expanded { MarkdownContent(text: message.body).padding(.top, 6) }
+            } else if let value = try? JSONValue.parse(message.body),
                message.body.trimmingCharacters(in: .whitespacesAndNewlines).first.map({ $0 == "{" || $0 == "[" }) == true {
                 ChatJSON(value: value)
             } else {
@@ -387,8 +449,23 @@ struct InboxView: View {
             PageHeading(title: "Updates", subtitle: "Notices from your Assistant installation.")
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    if model.messages.filter({ $0.taskID == nil }).isEmpty {
+                    if model.messages.filter({ $0.taskID == nil }).isEmpty &&
+                        !model.activityUpdates.contains(where: { $0.instanceID == model.health?.instanceID }) {
                         Text("No updates to show.").foregroundStyle(Theme.secondary)
+                    }
+                    ForEach(model.activityUpdates.filter { $0.instanceID == model.health?.instanceID }) { update in
+                        Button {
+                            model.notificationTaskID = update.taskID
+                            model.notificationApprovals = update.category == "approvals"
+                            model.notificationRequest = UUID()
+                            showingUpdates = false
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(update.title).font(.callout.weight(.medium))
+                                Text(update.createdAt.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption).foregroundStyle(Theme.secondary)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                        }.buttonStyle(.plain)
                     }
                     ForEach(model.messages.filter { $0.taskID == nil }) { message in
                         ManagementPanel {
@@ -413,6 +490,8 @@ struct InboxView: View {
             }
         }
         .padding(24).frame(width: 700, height: 600)
+        .onAppear { model.markUpdatesSeen() }
+        .onChange(of: model.activityUpdates.count) { model.markUpdatesSeen() }
         .task(id: model.offeredIDs) {
             let ids = Set(model.messages.filter { $0.taskID == nil }.map(\.id))
             await model.acknowledgeRendered(ids: model.offeredIDs.filter(ids.contains))
@@ -421,8 +500,15 @@ struct InboxView: View {
 
     /// The composer needs no task IDs or workstream controls, and supports a keyboard send action.
     private var composer: some View {
-        @Bindable var chat = model.chats
+        @Bindable var chat = self.chat
         return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                StableProgress(active: chat.selected?.active == true && !chat.sending)
+                Text(chat.selected?.active == true ? String(localized: "Working…") :
+                        chat.selected?.channel != "client" && chat.selected != nil ?
+                        String(localized: "Reply destination: this Assistant client") : "")
+                    .font(.caption).foregroundStyle(Theme.secondary)
+            }.frame(height: 20)
             TextEditor(text: $chat.draft).font(.body).scrollContentBackground(.hidden)
                 .frame(minHeight: 65, maxHeight: 140)
                 .accessibilityLabel("Message Assistant")
@@ -433,11 +519,14 @@ struct InboxView: View {
                     Text("Reply to this conversation").font(.caption).foregroundStyle(Theme.secondary)
                 }
                 Spacer()
-                Button { Task { await chat.send(model) } } label: {
+                Button {
+                    if let selected = chat.selected, selected.channel != "client" { confirmingRoute = true }
+                    else { Task { await chat.send(model) } }
+                } label: {
                     if chat.sending { Text("Sending…") }
                     else { Label("Send", systemImage: "arrow.up") }
                 }
-                .buttonStyle(CopperButtonStyle()).keyboardShortcut(.return, modifiers: .command)
+                .buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.return, modifiers: .command)
                 .disabled(chat.sending || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
                           model.clientID == nil || chat.selected?.deleted == true)
             }
@@ -479,6 +568,86 @@ struct InboxView: View {
                 }
             }
         }.padding(24).frame(width: 560)
+    }
+}
+
+/// Shows scheduled reminders, including those that haven't run yet.
+private struct ReminderScheduleView: View {
+    let model: ClientModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var reminders: [Reminder] = []
+    @State private var page = 0
+    @State private var total = 0
+    @State private var loading = false
+    @State private var error: String?
+
+    private struct Reminder: Decodable, Identifiable {
+        let id: Int
+        let title: String
+        let runAt: String
+        let status: String
+        let metadata: JSONValue?
+
+        var channel: String? { metadata?["delivery"]?["primary"]?["channel"]?.string }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            PageHeading(title: "Reminder schedule", subtitle: "See when Assistant is due to run your reminders.")
+            if let error { ErrorBanner(message: error) }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if reminders.isEmpty && !loading && error == nil {
+                        Text("No reminders yet. Ask Assistant in chat to schedule one.")
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    ForEach(reminders) { reminder in
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(reminder.title).font(.headline)
+                            if reminder.status == "scheduled", let date = ServerDate.parse(reminder.runAt) {
+                                Text("Next run: \(date.formatted(date: .abbreviated, time: .shortened))")
+                            } else {
+                                Text(reminder.status.replacingOccurrences(of: "_", with: " ").capitalized)
+                            }
+                            if let channel = reminder.channel {
+                                Text("Delivery: \(Conversation.channelTitle(channel))").foregroundStyle(Theme.secondary)
+                            }
+                        }.frame(maxWidth: .infinity, alignment: .leading)
+                        Divider()
+                    }
+                }
+            }
+            HStack {
+                StableProgress(active: loading)
+                if reminders.count < total || error != nil {
+                    Button(error == nil ? "Load more" : "Retry") {
+                        Task { await load(page: reminders.isEmpty ? 0 : page + 1) }
+                    }.disabled(loading)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+            }
+        }
+        .padding(24).frame(width: 520, height: 460)
+        .task { await load(page: 0) }
+    }
+
+    private func load(page: Int) async {
+        guard !loading else { return }
+        loading = true
+        defer { loading = false }
+        do {
+            let result = try await model.read("records/reminders?page=\(page)")
+            let decoded = try Wire.decoder().decode(Page<Reminder>.self, from: JSONEncoder().encode(result))
+            if page == 0 { reminders = decoded.rows }
+            else {
+                let known = Set(reminders.map(\.id))
+                reminders.append(contentsOf: decoded.rows.filter { !known.contains($0.id) })
+            }
+            self.page = page
+            total = decoded.total
+            error = nil
+        } catch { self.error = error.presentableMessage ?? self.error }
     }
 }
 

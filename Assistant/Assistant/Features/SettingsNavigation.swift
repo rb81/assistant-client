@@ -4,9 +4,36 @@ import Foundation
 enum SettingsPage: Hashable {
     case group(String)
     case instructions
-    case agentYaml
+    case app
 }
 
+/// Stable product destinations replace catalog-level navigation.
+enum SettingsCategory: String, CaseIterable, Identifiable {
+    case app, assistant, models, connections, safety, advanced
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .assistant: return String(localized: "Assistant")
+        case .models: return String(localized: "Models & Voice")
+        case .connections: return String(localized: "Connections")
+        case .safety: return String(localized: "Safety & Approvals")
+        case .app: return String(localized: "General")
+        case .advanced: return String(localized: "Advanced")
+        }
+    }
+
+    /// Familiar symbols make the persistent category pane easy to scan.
+    var symbol: String {
+        switch self {
+        case .assistant: return "sparkles"
+        case .models: return "waveform"
+        case .connections: return "network"
+        case .safety: return "lock.shield"
+        case .app: return "macwindow"
+        case .advanced: return "slider.horizontal.3"
+        }
+    }
+}
 /// Fields that share a heading within a settings page, plus any extra accounts filed under it.
 struct SettingsSection: Identifiable {
     let title: String?
@@ -36,6 +63,31 @@ struct SettingsNavigation {
 
     func group(_ id: String) -> SettingGroup? { groups.first { $0.id == id } }
 
+    /// Server-owned grouping keeps future fields discoverable without another client taxonomy.
+    func pages(in category: SettingsCategory) -> [SettingGroup] {
+        groups.filter { group in
+            guard group.parent == nil else { return false }
+            let relatedFields = fields(in: group.id) +
+                groups.filter { $0.parent == group.id }.flatMap { fields(in: $0.id) }
+            return relatedFields.contains { self.category(for: group, field: $0) == category }
+        }
+    }
+
+    /// Settings tuning has a destination of its own, including tuning for otherwise basic pages.
+    func category(for root: SettingGroup, field: SettingField) -> SettingsCategory {
+        if root.destination == "server" || !root.basic || field.metadata?["level"]?.string == "advanced" {
+            return .advanced
+        }
+        if let category = root.destination.flatMap(SettingsCategory.init(rawValue:)) { return category }
+        switch root.id {
+        case "models", "embeddings", "transcription": return .models
+        case "email", "telegram", "calendar", "zoom", "dropbox": return .connections
+        case "security": return .safety
+        case "deployment": return .advanced
+        default: return .assistant
+        }
+    }
+
     func fields(in group: String) -> [SettingField] { fieldsByGroup[group] ?? [] }
 
     /// The page's own fields split by section; extra accounts attach to the section they belong to.
@@ -60,10 +112,14 @@ struct SettingsNavigation {
     func search(_ text: String) -> [(group: SettingGroup, fields: [SettingField])] {
         let query = text.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return [] }
+        let synonyms = ["api key": "key", "password": "password", "ai": "model",
+                        "permissions": "security", "mail": "email", "voice": "transcription"]
+        let expanded = synonyms[query.lowercased()] ?? query
         return groups.compactMap { group in
             let matches = fields(in: group.id).filter {
                 $0.label.localizedCaseInsensitiveContains(query) || $0.key.localizedCaseInsensitiveContains(query)
                     || ($0.help?.localizedCaseInsensitiveContains(query) ?? false)
+                    || $0.label.localizedCaseInsensitiveContains(expanded)
             }
             return matches.isEmpty ? nil : (group, matches)
         }

@@ -17,61 +17,81 @@ struct DataManagementView: View {
     @State private var confirmation = ""
     @State private var resetting = false
     @State private var hasLoaded = false
+    @State private var loadedPath: String?
+    @State private var loadedOffset = 0
+
+    private var showingRequestedPage: Bool { loadedPath == path && loadedOffset == offset }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                PageHeading(title: "Data", subtitle: "Browse Assistant’s workspace. Shared files stay separate from chat task deletion.")
-                if let error {
-                    ErrorBanner(message: error)
+        VStack(alignment: .leading, spacing: 22) {
+            PageHeading(title: "Data", subtitle: "Browse Assistant’s workspace. Shared files stay separate from chat task deletion.")
+            if let error {
+                Label(showingRequestedPage ? "Couldn’t refresh this folder. Showing the last loaded files." :
+                        "Couldn’t open this folder.", systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.orange)
+                HStack {
                     Button("Retry loading workspace", systemImage: "arrow.clockwise") { Task { await load() } }
+                    DisclosureGroup("Technical details") { ErrorBanner(message: error) }
                 }
-                if let notice { Label(notice, systemImage: "info.circle").foregroundStyle(Theme.secondary) }
-                ManagementPanel {
-                    VStack(alignment: .leading, spacing: 16) {
-                        HStack {
-                            Text("Workspace files").font(.title3.weight(.semibold))
-                            Spacer()
-                            Button("Upload file", systemImage: "square.and.arrow.up") { upload() }
-                            Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
-                        }
-                        HStack {
-                            Button("Parent folder", systemImage: "arrow.up") {
-                                path = (path as NSString).deletingLastPathComponent
-                                if path.isEmpty { path = "." }
-                                offset = 0
-                                Task { await load() }
-                            }.disabled(path == ".")
-                            Text(path).font(.callout.monospaced()).textSelection(.enabled).lineLimit(1)
-                        }
-                        Divider()
-                        if busy || !hasLoaded && error == nil { ProgressView("Loading workspace…") }
-                        if entries.isEmpty && !busy {
-                            Text(error != nil ? "Workspace could not be loaded." : hasLoaded ? "This folder is empty." : "Loading workspace…")
+            }
+            if let notice { Label(notice, systemImage: "info.circle").foregroundStyle(Theme.secondary) }
+            ManagementPanel {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("Workspace files").font(.title3.weight(.semibold))
+                        StableProgress(active: busy)
+                        Spacer()
+                        Button("Upload file", systemImage: "square.and.arrow.up") { upload() }
+                        Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
+                    }
+                    HStack {
+                        Button("Parent folder", systemImage: "arrow.up") {
+                            path = (path as NSString).deletingLastPathComponent
+                            if path.isEmpty { path = "." }
+                            offset = 0
+                            Task { await load() }
+                        }.disabled(path == ".")
+                        Text(path).font(.callout.monospaced()).textSelection(.enabled).lineLimit(1)
+                    }
+                    Divider()
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            if showingRequestedPage {
+                                ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in fileRow(entry) }
+                            }
+                        }.frame(maxWidth: .infinity)
+                    }
+                    .frame(minHeight: 180, maxHeight: .infinity)
+                    .overlay {
+                        if (!showingRequestedPage || entries.isEmpty) && (hasLoaded || error != nil) && !busy {
+                            Text(error != nil ? "Workspace could not be loaded." : "This folder is empty.")
                                 .foregroundStyle(Theme.secondary)
                         }
-                        ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in fileRow(entry) }
-                        HStack {
-                            Button("Previous") { offset = max(0, offset - 100); Task { await load() } }.disabled(offset == 0)
-                            Text("\(offset + (entries.isEmpty ? 0 : 1))–\(offset + entries.count) of \(total)")
-                                .font(.caption).foregroundStyle(Theme.secondary)
-                            Button("Next") { offset += 100; Task { await load() } }.disabled(offset + entries.count >= total)
-                            Spacer()
-                            TextField("New folder name", text: $newFolder).frame(maxWidth: 220)
-                            Button("Create folder") { createFolder() }.disabled(!validName(newFolder))
-                        }
+                    }
+                    Divider()
+                    HStack {
+                        Button("Previous") { offset = max(0, offset - 100); Task { await load() } }.disabled(offset == 0)
+                        Text(showingRequestedPage ?
+                             String(localized: "\(offset + (entries.isEmpty ? 0 : 1))–\(offset + entries.count) of \(total)") : "—")
+                            .font(.caption).foregroundStyle(Theme.secondary)
+                        Button("Next") { offset += 100; Task { await load() } }
+                            .disabled(!showingRequestedPage || offset + entries.count >= total)
+                        Spacer()
+                        TextField("New folder name", text: $newFolder).frame(maxWidth: 220)
+                        Button("Create folder") { createFolder() }.disabled(!validName(newFolder))
                     }
                 }
-                ManagementPanel {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Label("Danger zone", systemImage: "exclamationmark.triangle").font(.title3.weight(.semibold)).foregroundStyle(.red)
-                        Text("Reset Assistant’s database and task history. This is separate from deleting an individual chat task. Make and verify a server backup first.")
-                            .foregroundStyle(Theme.secondary)
-                        Button("Reset data…", role: .destructive) { confirmation = ""; showingReset = true }
-                    }
-                }
-            }.frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity)
+            }
+            HStack {
+                Label("Recovery", systemImage: "externaldrive.badge.exclamationmark")
+                Spacer()
+                Text("Make and verify a server backup before resetting.").font(.caption)
+                Button("Reset data…", role: .destructive) { confirmation = ""; showingReset = true }
+            }
+            .foregroundStyle(Theme.secondary)
+            .font(.callout)
         }
+        .frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .disabled(busy).task { await load() }
         .sheet(item: $pending) { mutation in
             MutationReview(mutation: mutation) {
@@ -90,17 +110,21 @@ struct DataManagementView: View {
 
     /// Workspace queries use the shared typed domain surface, not arbitrary host-file access.
     private func load() async {
+        let requestedPath = path
+        let requestedOffset = offset
         busy = true
         defer { busy = false }
         do {
             let result = try await model.query("query", payload: .object([
                 "action": .string("workspace.list"),
-                "arguments": .object(["path": .string(path), "offset": .integer(Int64(offset)), "limit": .integer(100)])
+                "arguments": .object(["path": .string(requestedPath), "offset": .integer(Int64(requestedOffset)), "limit": .integer(100)])
             ]))
             guard let entries = result["entries"]?.array, let total = result["total"]?.integer else {
                 throw ClientError.malformedResponse
             }
+            guard path == requestedPath, offset == requestedOffset else { return }
             self.entries = entries; self.total = Int(total); hasLoaded = true; error = nil
+            loadedPath = requestedPath; loadedOffset = requestedOffset
         } catch { self.error = error.presentableMessage ?? self.error }
     }
 
@@ -186,6 +210,7 @@ struct DataManagementView: View {
             Text("This removes database history and resets application data. Configuration is retained and mailbox position is preserved. This cannot be undone by this client.")
             TextField("Type RESET to continue", text: $confirmation).textFieldStyle(.roundedBorder)
             HStack {
+                StableProgress(active: resetting)
                 Spacer()
                 Button("Cancel") { showingReset = false }.disabled(resetting)
                 Button("Reset data", role: .destructive) {
@@ -205,7 +230,6 @@ struct DataManagementView: View {
                     }
                 }.disabled(confirmation != "RESET" || resetting)
             }
-            if resetting { ProgressView() }
         }.padding(24).frame(width: 560).interactiveDismissDisabled(resetting)
     }
 }

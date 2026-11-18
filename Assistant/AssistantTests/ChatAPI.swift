@@ -4,6 +4,7 @@ import Foundation
 /// Read/write chat fixtures capture request intent without real credentials or process launches.
 actor ChatAPI: ManagementAPI {
     var payloads: [JSONValue] = []
+    var resources: [String] = []
     private var lost = false
     private var pauseSubmission = false
     private var submissionWaiter: CheckedContinuation<Void, Never>?
@@ -30,6 +31,7 @@ actor ChatAPI: ManagementAPI {
 
     /// Unknown fixture routes fail explicitly instead of fabricating successful empty data.
     func request(_ resource: String, body: JSONValue?, key: String?) async throws -> Data {
+        resources.append(resource)
         if let prefix = pausedReads.first(where: { resource.hasPrefix($0) }) {
             pausedReads.remove(prefix)
             await withCheckedContinuation { readWaiters[prefix] = $0 }
@@ -63,6 +65,15 @@ actor ChatAPI: ManagementAPI {
         }
         if resource == "services?details=true" {
             return Data(#"{"services":[{"id":"task-agent","title":"Task worker","state":"running","health":"healthy"}]}"#.utf8)
+        }
+        if resource == "tasks/7/snapshot" {
+            return Data("""
+            {"page":1,"messages":{"rows":[{"id":2,"kind":"reply","channel":"client","body":"Newest snapshot",
+              "created_at":"2026-11-16T10:01:00Z"}],"total":51},
+             "activity":{"rows":[{"id":"7:1","task_id":7,"created_at":"2026-11-16T10:00:00Z",
+               "tool_name":"web_search","status":"succeeded","input":{"search_query":"places"}}],"truncated":false},
+             "task":{"id":7,"thread_id":"chat-thread","task_summary":"Chat","status":"completed","updated_at":"2026-11-16"}}
+            """.utf8)
         }
         if resource.hasPrefix("tasks/7/activity") {
             return Data(#"{"rows":[],"total":0,"truncated":false}"#.utf8)

@@ -6,6 +6,86 @@ import XCTest
 
 /// Isolated transport and mutation tests never contact a real server or Docker installation.
 final class AssistantTests: XCTestCase {
+    /// Only known bounded invalidations are accepted; incomplete and oversized frames cannot grow state.
+    func testEventParserBoundsAndSeparatesFrames() throws {
+        var parser = ManagementEventParser()
+        XCTAssertNil(try parser.consume(": keepalive"))
+        XCTAssertNil(try parser.consume("id: epoch:1"))
+        XCTAssertNil(try parser.consume("event: approvals.changed"))
+        XCTAssertEqual(try parser.consume(""), ManagementEvent(id: "epoch:1", kind: "approvals.changed"))
+        XCTAssertNil(try parser.consume(""))
+        XCTAssertNil(try parser.consume("event: unknown"))
+        XCTAssertNil(try parser.consume("id: epoch:2"))
+        XCTAssertNil(try parser.consume(""))
+        XCTAssertThrowsError(try parser.consume("id: " + String(repeating: "x", count: 129)))
+        XCTAssertThrowsError(try parser.consume("id: bad\u{0}cursor"))
+        XCTAssertThrowsError(try parser.consume(String(repeating: "x", count: 4097)))
+    }
+
+    /// Deduplication survives relaunch and evicts the oldest ID rather than the lexicographically smallest.
+    @MainActor
+    func testNotificationDeduplicationRetainsRecentIDs() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        defaults.set(["fixture:z-old"] + (0..<999).map { "fixture:m-\($0)" }, forKey: "assistant.notified")
+        let model = ClientModel(defaults: defaults, health: health)
+        await model.addUpdate(id: "a-new", title: "Task completed", taskID: 7, category: "replies")
+        XCTAssertEqual(defaults.stringArray(forKey: "assistant.notified")?.count, 1000)
+        XCTAssertEqual(defaults.stringArray(forKey: "assistant.notified")?.last, "fixture:a-new")
+        XCTAssertFalse(defaults.stringArray(forKey: "assistant.notified")?.contains("fixture:z-old") ?? true)
+        let restored = ClientModel(defaults: defaults, health: health)
+        await restored.addUpdate(id: "a-new", title: "Duplicate", taskID: 7, category: "replies")
+        XCTAssertEqual(restored.activityUpdates.count, 1)
+        XCTAssertEqual(restored.activityUpdates.first?.title, "Task completed")
+        XCTAssertEqual(restored.unreadUpdates, 1)
+        restored.markUpdatesSeen()
+        XCTAssertEqual(ClientModel(defaults: defaults, health: health).unreadUpdates, 0)
+    }
+
+    /// Saving without applying remains visible across navigation and relaunch.
+    @MainActor
+    func testPendingActivationIsPersistedPerInstallation() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let model = ClientModel(defaults: defaults, health: health)
+        model.recordActivation(.pending)
+        XCTAssertEqual(ClientModel(defaults: defaults, health: health).activationState, .pending)
+        model.recordActivation(.unknown)
+        XCTAssertEqual(ClientModel(defaults: defaults, health: health).activationState, .unknown)
+        let other = InstanceHealth(apiVersion: 2, instanceID: "other", name: "Other", capabilities: [], readOnly: false)
+        XCTAssertEqual(ClientModel(defaults: defaults, health: other).activationState, .active)
+    }
+
+    /// Scope is a per-installation preference, not evidence that a thread belongs to this Mac.
+    @MainActor
+    func testChannelScopeSurvivesDisconnectAndIsIsolated() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let model = ClientModel(defaults: defaults, health: health)
+        model.chats.channel = "telegram"
+        await model.disconnect()
+        let restored = ClientModel(defaults: defaults, health: health)
+        XCTAssertEqual(restored.chats.channel, "telegram")
+        try restored.chats.restoreCache(instance: "another-installation")
+        XCTAssertEqual(restored.chats.channel, "")
+    }
+
+    /// A snapshot replaces sequential transcript reads without transforming tool argument keys.
+    @MainActor
+    func testConversationUsesSnapshotAndPreservesToolKeys() async throws {
+        let api = ChatAPI()
+        let snapshotHealth = InstanceHealth(apiVersion: 2, instanceID: "snapshot", name: "Assistant",
+                                           capabilities: ["tasks.snapshot"], readOnly: false)
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: snapshotHealth)
+        try await model.chats.loadConversations(model)
+        model.chats.select(try XCTUnwrap(model.chats.conversations.first))
+        try await model.chats.refresh(model)
+        XCTAssertEqual(model.chats.messages.first?.body, "Newest snapshot")
+        XCTAssertEqual(model.chats.totalMessages, 51)
+        XCTAssertEqual(model.chats.toolCalls.first?.input?["search_query"], .string("places"))
+        let resources = await api.resources
+        XCTAssertTrue(resources.contains("tasks/7/snapshot"))
+        XCTAssertFalse(resources.contains(where: { $0.hasPrefix("tasks/7/messages") || $0.hasPrefix("tasks/7/activity") }))
+    }
+
     /// Unread state survives relaunch, ignores clicks, and never marks newer list metadata as rendered.
     @MainActor
     func testUnreadConversationsPersistOnlyRenderedVersionsAndSortByInstant() async throws {

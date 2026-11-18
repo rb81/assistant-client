@@ -7,17 +7,20 @@ actor PreviewManagementAPI: ManagementAPI {
     private var deleted = false
     private var sent = false
     private var assistantName = "Assistant"
+    private var assistantInstructions = "Be thoughtful, clear, and useful."
     private let chatDetails: Bool
     private let offline: Bool
     private let liveChat: Bool
+    private let slowReads: Bool
     private var activityReads = 0
     private var sentBody = ""
 
     /// Detail fixtures exercise attachments and external-delivery metadata without any network.
-    init(chatDetails: Bool = false, offline: Bool = false, liveChat: Bool = false) {
+    init(chatDetails: Bool = false, offline: Bool = false, liveChat: Bool = false, slowReads: Bool = false) {
         self.chatDetails = chatDetails
         self.offline = offline
         self.liveChat = liveChat
+        self.slowReads = slowReads
     }
 
     /// A short silent WAV is safe to prepare for playback during UI tests.
@@ -33,6 +36,10 @@ actor PreviewManagementAPI: ManagementAPI {
     /// Fixture responses mirror the wire contract and reject any unmodeled operation.
     func request(_ resource: String, body: JSONValue?, key: String?) async throws -> Data {
         if offline { throw URLError(.notConnectedToInternet) }
+        if slowReads && (resource.hasSuffix("/logs") || body?["action"] == .string("workspace.list")
+                         || resource.hasPrefix("configuration/settings") || resource == "configuration/instructions") {
+            try await Task.sleep(for: .seconds(2))
+        }
         let value: JSONValue
         let audio = try self.audio
         let task: JSONValue = .object([
@@ -41,11 +48,39 @@ actor PreviewManagementAPI: ManagementAPI {
             "status": .string(deleted ? "deleted" : liveChat ? "running" : "completed"),
             "updated_at": .string("2026-11-16T10:00:00Z"), "last_error": .null
         ])
-        if resource.hasPrefix("conversations?") {
+        if resource.hasPrefix("conversations?"), resource.contains("channel=reminder") {
+            value = .object(["total": .integer(1), "rows": .array([.object([
+                "thread_id": .string("reminder:3"), "channel": .string("reminder"),
+                "message_count": .integer(1), "opening_message": .string("Check tomorrow’s calendar."),
+                "last_activity_at": .string("2026-11-16T10:00:01Z"), "latest_task_id": .integer(8),
+                "latest_task_status": .string("completed"), "latest_task_summary": .string("Calendar digest"),
+            ])])])
+        } else if resource.hasPrefix("tasks/8/messages") {
+            value = .object(["total": .integer(2), "rows": .array([
+                .object(["id": .integer(3), "kind": .string("request"), "channel": .string("reminder"),
+                         "body": .string("Check tomorrow’s calendar."), "created_at": .string("2026-11-16T10:00:00Z")]),
+                .object(["id": .integer(4), "kind": .string("reply"), "channel": .string("telegram"),
+                         "body": .string("There are no events tomorrow."), "created_at": .string("2026-11-16T10:00:01Z")])
+            ])])
+        } else if resource.hasPrefix("tasks/8/activity") {
+            value = .object(["total": .integer(0), "truncated": .bool(false), "rows": .array([])])
+        } else if resource == "records/tasks/8" {
+            value = .object(["total": .integer(1), "rows": .array([.object([
+                "id": .integer(8), "thread_id": .string("reminder:3"), "task_summary": .string("Calendar digest"),
+                "status": .string("completed"), "updated_at": .string("2026-11-16T10:00:01Z"),
+                "source_channel": .string("reminder")
+            ])])])
+        } else if resource.hasPrefix("records/reminders?") {
+            value = .object(["total": .integer(1), "rows": .array([.object([
+                "id": .integer(3), "title": .string("Calendar digest"), "status": .string("scheduled"),
+                "run_at": .string("2026-11-17T10:00:00Z"),
+                "metadata": .object(["delivery": .object(["primary": .object(["channel": .string("telegram")])])])
+            ])])])
+        } else if resource.hasPrefix("conversations?") {
             value = .object(["total": .integer(1), "rows": .array([.object([
                 "thread_id": .string("fixture-thread"), "channel": .string("client"),
-                "message_count": .integer(sent ? 2 : 1), "opening_message": .string("Help me plan the launch."),
-                "last_activity_at": .string("2026-11-16T10:00:01Z"), "latest_task_id": .integer(7),
+                "message_count": .integer(sent ? 4 : 2), "opening_message": .string("Help me plan the launch."),
+                "last_activity_at": .string(sent ? "2026-11-16T10:00:03Z" : "2026-11-16T10:00:01Z"), "latest_task_id": .integer(7),
                 "latest_task_status": .string(deleted ? "deleted" : liveChat ? "running" : "completed"),
                 "latest_task_summary": .string(deleted ? "[Deleted task]" : "Plan a thoughtful launch"),
                 "workstream_title": .string("Product launch")
@@ -92,8 +127,7 @@ actor PreviewManagementAPI: ManagementAPI {
                 .object(["id": .integer(1), "kind": .string("request"), "channel": .string("client"),
                          "body": .string("Help me plan the launch."), "created_at": .string("2026-11-16T10:00:00Z")]),
                 .object(["id": .integer(2), "kind": .string("reply"), "channel": .string("client"),
-                         "body": .string("# A thoughtful launch\nStart small, then learn.\n\n```swift\nlet ready = true\n```\n\n- Validate the essentials\n- Keep the feedback loop short" +
-                                         (sent ? "\n\nYour follow-up was received." : "")),
+                         "body": .string("# A thoughtful launch\nStart small, then learn.\n\n```swift\nlet ready = true\n```\n\n- Validate the essentials\n- Keep the feedback loop short"),
                          "created_at": .string("2026-11-16T10:00:01Z")])
             ]
             if chatDetails {
@@ -119,6 +153,10 @@ actor PreviewManagementAPI: ManagementAPI {
                 rows.append(.object([
                     "id": .integer(100), "kind": .string("request"), "channel": .string("client"),
                     "body": .string(sentBody), "created_at": .string("2026-11-16T10:00:02Z")
+                ]))
+                rows.append(.object([
+                    "id": .integer(101), "kind": .string("reply"), "channel": .string("client"),
+                    "body": .string("Your follow-up was received."), "created_at": .string("2026-11-16T10:00:03Z")
                 ]))
             }
             value = .object(["total": .integer(Int64(rows.count)), "rows": .array(rows)])
@@ -149,10 +187,13 @@ actor PreviewManagementAPI: ManagementAPI {
             value = .object(["credentials": .array([
                 .object(["name": .string("AGENT_LLM_OPENROUTER_API_KEY"), "status": .string("configured")])
             ])])
-        } else if resource == "configuration" {
+        } else if resource == "configuration/instructions" {
+            value = .object(["revision": .string(String(repeating: "a", count: 64)),
+                             "instructions": .string(assistantInstructions)])
+        } else if resource == "configuration" || resource == "configuration/catalog" || resource.hasPrefix("configuration/settings") {
             value = .object([
                 "revision": .string(String(repeating: "a", count: 64)), "setup_complete": .bool(true),
-                "instructions": .string("Be thoughtful, clear, and useful."), "setup_notice": .string(""),
+                "instructions": .string(assistantInstructions), "setup_notice": .string(""),
                 "agent_yaml": .string("agent:\n  identity:\n    name: Assistant\n"),
                 "agent_yaml_backups": .array([]),
                 "settings": .array([
@@ -208,6 +249,9 @@ actor PreviewManagementAPI: ManagementAPI {
             if action == "configuration.save", let name = body?["values"]?["AGENT_IDENTITY_NAME"]?.string {
                 assistantName = name
             }
+            if action == "configuration.save", let instructions = body?["instructions"]?.string {
+                assistantInstructions = instructions
+            }
             value = .object([
                 "id": .string("fixture-operation"), "action": .string(action), "state": .string("succeeded"),
                 "progress": .string("Completed"), "result": .object(["task_id": .integer(7), "request_id": .integer(100)])
@@ -215,6 +259,23 @@ actor PreviewManagementAPI: ManagementAPI {
         } else if resource == "operations" {
             value = .array([])
         } else { throw ClientError.invalidResource }
+        if resource == "configuration/catalog" || resource.hasPrefix("configuration/settings"),
+           case .object(var configuration) = value {
+            configuration.removeValue(forKey: "agent_yaml")
+            configuration.removeValue(forKey: "agent_yaml_backups")
+            configuration["instructions"] = .string("")
+            configuration["instructions_configured"] = .bool(true)
+            let group = URLComponents(string: "http://localhost/\(resource)")?.queryItems?
+                .first(where: { $0.name == "group" })?.value
+            configuration["settings"] = .array((configuration["settings"]?.array ?? []).compactMap { field in
+                guard case .object(var definition) = field else { return nil }
+                if resource == "configuration/catalog" { definition["value"] = .string("") }
+                if let group, let fieldGroup = definition["group"]?.string,
+                   fieldGroup != group && !(group == "calendar" && fieldGroup.hasPrefix("calendar:")) { return nil }
+                return .object(definition)
+            })
+            return try JSONEncoder().encode(JSONValue.object(configuration))
+        }
         return try JSONEncoder().encode(value)
     }
 

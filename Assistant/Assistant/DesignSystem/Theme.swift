@@ -1,24 +1,82 @@
 import AppKit
 import SwiftUI
 
-/// Ink & Copper tokens adapt to system appearance without replacing native interaction behavior.
+/// Adaptive color, type and spacing for native Assistant views.
 enum Theme {
     static let background = Color("Canvas")
     static let panel = Color("Panel")
     static let ink = Color("Ink")
     static let secondary = Color("Muted")
-    static let accent = Color("Copper")
+    static let accent = Color.accentColor
+    static let outline = secondary.opacity(0.18)
+    static let pageTitle: Font = .largeTitle.weight(.semibold)
+    static let sectionTitle: Font = .title2.weight(.semibold)
     static let spacing: CGFloat = 16
     static let radius: CGFloat = 12
-    static let sidebarMinimum: CGFloat = 220
-    static let sidebarIdeal: CGFloat = 240
-    static let sidebarMaximum: CGFloat = 280
+    static let sidebarMinimum: CGFloat = 160
+    static let sidebarIdeal: CGFloat = 180
+    static let sidebarMaximum: CGFloat = 220
     static let contentWidth: CGFloat = 860
+    static let settingsCategoryWidth: CGFloat = 210
+    static let settingsDetailMinimum: CGFloat = 340
     static let windowMinimum = CGSize(width: 1000, height: 700)
     static let windowDefault = CGSize(width: 1280, height: 860)
 
     /// System monospace requires no manual font installation.
     static let terminalFont: Font = .system(size: 12, design: .monospaced)
+}
+
+/// Background progress occupies a fixed slot and stays invisible for fast reads.
+struct StableProgress: View {
+    let active: Bool
+    @State private var visible = false
+
+    var body: some View {
+        ProgressView().controlSize(.small)
+            .opacity(visible ? 1 : 0)
+            .frame(width: 18, height: 18)
+            .accessibilityHidden(!visible)
+            .task(id: active) {
+                visible = false
+                guard active else { return }
+                do {
+                    try await Task.sleep(for: .milliseconds(250))
+                    visible = true
+                } catch { return }
+            }
+    }
+}
+
+/// Product navigation shares one selected treatment without stock list chrome.
+struct DestinationButtonStyle: ButtonStyle {
+    let selected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.callout.weight(.medium))
+            .foregroundStyle(selected ? Theme.accent : Theme.ink)
+            .padding(.horizontal, 11).padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.accent.opacity(selected ? 0.12 : configuration.isPressed ? 0.07 : 0),
+                        in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// A persistent, vertically scrolling settings pane keeps its heading and selection in place.
+struct SettingsNavigationPane<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) { content }
+                .padding(.horizontal, 10).padding(.vertical, 16)
+        }
+        .accessibilityLabel(title)
+        .accessibilityIdentifier("settings-navigation")
+        .background(Theme.panel)
+    }
 }
 
 /// Consistent page introduction with room for a concise, task-oriented explanation.
@@ -28,7 +86,7 @@ struct PageHeading: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 28, weight: .semibold, design: .rounded))
+            Text(title).font(Theme.pageTitle)
             Text(subtitle).foregroundStyle(Theme.secondary)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -50,8 +108,8 @@ struct StatusBadge: View {
     }
 }
 
-/// A compact copper primary action preserves standard keyboard and accessibility semantics.
-struct CopperButtonStyle: ButtonStyle {
+/// A compact primary action preserves standard keyboard and accessibility semantics.
+struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var enabled
     /// Renders press feedback without removing the underlying native button behavior.
     func makeBody(configuration: Configuration) -> some View {
@@ -74,7 +132,7 @@ struct ManagementPanel<Content: View>: View {
             .padding(Theme.spacing)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.secondary.opacity(0.15)))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline))
     }
 }
 

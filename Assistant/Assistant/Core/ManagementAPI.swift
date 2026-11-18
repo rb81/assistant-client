@@ -4,8 +4,39 @@ import Foundation
 protocol ManagementAPI: Sendable {
     /// Sends a bounded authenticated request to a relative v2 resource.
     func request(_ resource: String, body: JSONValue?, key: String?) async throws -> Data
+    /// Receives resumable invalidations through the same authenticated SSH tunnel.
+    func events(after cursor: String?, receive: @Sendable (ManagementEvent) async -> Void) async throws
 }
 
+/// An event contains only an opaque resume cursor and a reason to refresh authoritative state.
+struct ManagementEvent: Sendable, Equatable {
+    let id: String
+    let kind: String
+}
+
+/// Parses bounded SSE frames without retaining server content between events.
+struct ManagementEventParser {
+    private var identifier = ""
+    private var kind = ""
+
+    /// A blank line commits one invalidation; comments and payloads carry no client state.
+    mutating func consume(_ line: String) throws -> ManagementEvent? {
+        guard line.utf8.count <= 4096 else { throw ClientError.oversizedResponse }
+        if line.isEmpty {
+            defer { identifier = ""; kind = "" }
+            guard !identifier.isEmpty, ["resync", "state.changed", "approvals.changed", "server.unavailable"].contains(kind) else { return nil }
+            return ManagementEvent(id: identifier, kind: kind)
+        }
+        if line.hasPrefix("id:") {
+            identifier = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            guard identifier.utf8.count <= 128,
+                  identifier.utf8.allSatisfy({ (33...126).contains($0) }) else { throw ClientError.malformedResponse }
+        } else if line.hasPrefix("event:") {
+            kind = String(line.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+        }
+        return nil
+    }
+}
 /// Prevents a redirect from forwarding an administrative credential elsewhere.
 final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     /// Refuses all redirects on the loopback-only management connection.
@@ -83,6 +114,33 @@ final class HTTPManagementAPI: ManagementAPI {
         }
     }
 
+    /// Streaming invalidations share host validation, credentials and cancellation with ordinary reads.
+    func events(after cursor: String?, receive: @Sendable (ManagementEvent) async -> Void) async throws {
+        var request = try makeRequest("events", body: nil, key: nil)
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        if let cursor { request.setValue(cursor, forHTTPHeaderField: "Last-Event-ID") }
+        let (bytes, response) = try await session.bytes(for: request)
+        guard let response = response as? HTTPURLResponse else { throw ClientError.malformedResponse }
+        guard response.statusCode == 200 else { throw ClientError.http(response.statusCode) }
+        guard response.value(forHTTPHeaderField: "Content-Type")?.hasPrefix("text/event-stream") == true else {
+            throw ClientError.malformedResponse
+        }
+        var parser = ManagementEventParser()
+        var line = ""
+        for try await byte in bytes {
+            try Task.checkCancellation()
+            if byte == 10 {
+                if line.hasSuffix("\r") { line.removeLast() }
+                if let event = try parser.consume(line) { await receive(event) }
+                line = ""
+            } else {
+                guard line.utf8.count < 4096, byte < 128 else { throw ClientError.malformedResponse }
+                line.unicodeScalars.append(UnicodeScalar(byte))
+            }
+        }
+        throw URLError(.networkConnectionLost)
+    }
+
     static let readAttempts = 3
 
     /// Busy executors and dropped connections are transient; everything else is reported immediately.
@@ -124,6 +182,11 @@ final class HTTPManagementAPI: ManagementAPI {
 }
 
 extension ManagementAPI {
+    /// Older servers and isolated fixtures retain the existing polling path.
+    func events(after cursor: String?, receive: @Sendable (ManagementEvent) async -> Void) async throws {
+        throw ClientError.serverOutdated(String(localized: "live updates"))
+    }
+
     /// Reads a typed resource through the same bounded transport.
     func read<T: Decodable & Sendable>(_ resource: String, as type: T.Type) async throws -> T {
         try Wire.decoder().decode(type, from: await request(resource, body: nil, key: nil))
