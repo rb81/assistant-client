@@ -97,7 +97,7 @@ persist secret request bodies. See the
 
 Conversation drafts and API tokens stay in session memory. Loaded transcripts
 and tool details are cached in preferences per verified installation identity
-until **Clear chat cache**. Attachments are memory-only unless downloaded, with a
+until **Clear conversation cache**. Attachments are memory-only unless downloaded, with a
 64 MiB per-file limit. Workspace uploads are scanner-gated and limited to 1 MiB.
 Closing the client never stops services.
 
@@ -126,10 +126,10 @@ primary interface.
 
 ## Design and assets
 
-Asset colors adapt the indigo accent and neutral surfaces to light and dark
-appearances. The UI uses the macOS system font, with system monospace for
-diagnostic output. The icon source is
-`Assistant/Assistant/Resources/AssistantMark.svg`; exported PNG sizes are in the asset catalog.
+Asset colors adapt the app icon's orange, amber, and warm neutrals to light and
+dark appearances. The UI uses the macOS system font, with system monospace for
+diagnostic output. The asset catalog's `AppIcon.appiconset` contains the
+1024-pixel icon master and the smaller macOS sizes derived from it.
 
 ## Release checklist
 
