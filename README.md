@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="Assistant/Assistant/Assets.xcassets/AppIcon.appiconset/icon-128.png" alt="Assistant" width="128">
+  <img src="Assistant/Assistant/Assets.xcassets/AppIcon.appiconset/icon-1024.png" alt="Assistant" width="240">
 </p>
 
 <h1 align="center">Assistant for macOS</h1>
