@@ -199,6 +199,12 @@ actor PreviewManagementAPI: ManagementAPI {
                 "settings": .array([
                     setting("identity", "AGENT_IDENTITY_NAME", "Assistant name", assistantName,
                             help: "The name the assistant uses when introducing itself."),
+                    setting("identity", "AGENT_APP_TIMEZONE", "Timezone", "UTC",
+                            help: "Timezone used by your assistant."),
+                    setting("approvals", "AGENT_ADMIN_EMAIL", "Approval email", "admin@example.test",
+                            help: "The address used for administrative decisions."),
+                    setting("approvals", "AGENT_APPROVALS_CHANNEL", "Approval delivery", "email",
+                            help: "Where approval requests are delivered.", choices: ["email", "telegram", "both", "client"]),
                     setting("models", "AGENT_LLM_MODEL", "Primary model", "example/model",
                             help: "Model used for ordinary tasks."),
                     .object(["group": .string("models"), "key": .string("AGENT_LLM_OPENROUTER_API_KEY"),
@@ -228,6 +234,8 @@ actor PreviewManagementAPI: ManagementAPI {
                     group("calendar:google_2", "Google calendar 2", help: "An additional Google calendar account.",
                           parent: "calendar", section: "Google"),
                     group("zoom", "Zoom", help: "Connect Zoom so the assistant can manage meetings.", basic: true),
+                    group("approvals", "Approvals", help: "Choose where to receive approval requests.",
+                          basic: true, destination: "safety"),
                     group("advanced:Task limits", "Task limits", help: "Bound model iterations and output.")
                 ])
             ])
@@ -290,10 +298,10 @@ actor PreviewManagementAPI: ManagementAPI {
     }
 
     private func group(_ id: String, _ title: String, help: String, parent: String? = nil,
-                       section: String? = nil, basic: Bool = false) -> JSONValue {
+                       section: String? = nil, basic: Bool = false, destination: String? = nil) -> JSONValue {
         .object(["id": .string(id), "title": .string(title), "help": .string(help),
                  "parent": parent.map(JSONValue.string) ?? .null, "section": section.map(JSONValue.string) ?? .null,
-                 "basic": .bool(basic)])
+                 "basic": .bool(basic), "destination": destination.map(JSONValue.string) ?? .null])
     }
 }
 #endif

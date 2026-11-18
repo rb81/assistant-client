@@ -71,11 +71,15 @@ struct ConfigurationView: View {
                 if scope == .app || scope == .assistant || !groups.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         Label(scope.title, systemImage: scope.symbol)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.secondary)
+                            .font(.headline)
+                            .foregroundStyle(Theme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 10).padding(.vertical, 7)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Theme.background, in: RoundedRectangle(cornerRadius: 8))
+                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.outline))
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityIdentifier("settings-category-\(scope.rawValue)")
-                            .padding(.horizontal, 10).padding(.bottom, 4)
                         if scope == .app {
                             sectionButton(String(localized: "On this Mac"), page: .app, in: scope, identifier: "app")
                         }
@@ -246,7 +250,7 @@ struct ConfigurationView: View {
             }) { section in
                 ManagementPanel {
                     VStack(alignment: .leading, spacing: 16) {
-                        if let title = section.title { Text(title).font(.title3.weight(.semibold)) }
+                        if let title = section.title { sectionHeading(title) }
                         fieldList(visible(section.fields, root: group))
                         let accounts = section.accounts.filter { !visible(navigation.fields(in: $0.id), root: group).isEmpty }
                         if !accounts.isEmpty { accountList(accounts, root: group, navigation: navigation) }
@@ -258,10 +262,7 @@ struct ConfigurationView: View {
             }) { child in
                 ManagementPanel {
                     VStack(alignment: .leading, spacing: 16) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(child.title).font(.title3.weight(.semibold))
-                            if let help = child.help { Text(help).font(.callout).foregroundStyle(Theme.secondary) }
-                        }
+                        sectionHeading(child.title, help: child.help)
                         fieldList(visible(navigation.fields(in: child.id), root: group))
                     }
                 }
@@ -274,8 +275,16 @@ struct ConfigurationView: View {
 
     private func pageIntro(_ title: String, help: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(Theme.sectionTitle)
+            Text(title).font(Theme.pageTitle).accessibilityAddTraits(.isHeader)
             if let help { Text(help).foregroundStyle(Theme.secondary).fixedSize(horizontal: false, vertical: true) }
+        }
+    }
+
+    private func sectionHeading(_ title: String, help: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(Theme.sectionTitle).accessibilityAddTraits(.isHeader)
+            if let help { Text(help).font(.callout).foregroundStyle(Theme.secondary) }
+            Rectangle().fill(Theme.outline).frame(height: 1).accessibilityHidden(true)
         }
     }
 

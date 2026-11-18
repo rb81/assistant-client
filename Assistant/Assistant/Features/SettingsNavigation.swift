@@ -82,7 +82,7 @@ struct SettingsNavigation {
         switch root.id {
         case "models", "embeddings", "transcription": return .models
         case "email", "telegram", "calendar", "zoom", "dropbox": return .connections
-        case "security": return .safety
+        case "approvals", "security": return .safety
         case "deployment": return .advanced
         default: return .assistant
         }
@@ -139,7 +139,7 @@ struct SettingsNavigation {
     /// Older servers send no group metadata; derive flat top-level pages from field groups.
     private static func fallbackGroups(_ settings: [SettingField]) -> [SettingGroup] {
         let essentials: Set = ["identity", "models", "email", "telegram", "calendar", "zoom", "dropbox",
-                               "transcription", "security", "embeddings"]
+                               "transcription", "approvals", "security", "embeddings"]
         var seen: [String] = []
         for field in settings where !seen.contains(field.group) { seen.append(field.group) }
         return seen.map { id in

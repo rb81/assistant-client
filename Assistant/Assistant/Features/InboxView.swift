@@ -511,6 +511,11 @@ struct InboxView: View {
             }.frame(height: 20)
             TextEditor(text: $chat.draft).font(.body).scrollContentBackground(.hidden)
                 .frame(minHeight: 65, maxHeight: 140)
+                .background(Theme.background, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.secondary.opacity(0.5))
+                        .allowsHitTesting(false)
+                }
                 .accessibilityLabel("Message Assistant")
             HStack {
                 if chat.selectedThread == nil {
