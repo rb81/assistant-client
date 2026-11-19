@@ -59,6 +59,52 @@ final class WorkspacePreviewTests: XCTestCase {
         XCTAssertNotNil(preview.error)
     }
 
+    func testImagesDecodeToBoundedPreviewAndInvalidImagesReportErrors() async throws {
+        let api = ChatAPI()
+        let model = try client(api)
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 5000, pixelsHigh: 20,
+                                                   bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                                   isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        try XCTUnwrap(bitmap.bitmapData).initialize(repeating: 0, count: bitmap.bytesPerRow * bitmap.pixelsHigh)
+        let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        await api.setWorkspaceFile("panorama.png", data: data)
+        let preview = WorkspacePreview()
+        await preview.load("panorama.png", model: model)
+        guard case .image(let image) = preview.content else { return XCTFail(preview.error ?? "Expected image") }
+        XCTAssertEqual(image.width, 4096)
+        XCTAssertLessThanOrEqual(image.height, 20)
+        XCTAssertNil(preview.error)
+        await api.setWorkspaceFile("broken.jpg", data: Data("Not an image".utf8))
+        await preview.load("broken.jpg", model: model)
+        XCTAssertNil(preview.content)
+        XCTAssertNotNil(preview.error)
+    }
+
+    func testTextAndCodeRemainInertAndPreserveUTF8AndUTF16() async throws {
+        let api = ChatAPI()
+        let model = try client(api)
+        let preview = WorkspacePreview()
+        let source = "<script>fetch('https://example.invalid')</script>\n<p>Display the source, not a web page.</p>"
+        await api.setWorkspaceFile("source.html", data: Data(source.utf8))
+        await preview.load("source.html", model: model)
+        guard case .text(let text) = preview.content else { return XCTFail("Expected inert source text") }
+        XCTAssertEqual(text, source)
+        let code = "export const message: string = 'Hello';\nconsole.log(message);"
+        await api.setWorkspaceFile("source.ts", data: Data(code.utf8))
+        await preview.load("source.ts", model: model)
+        guard case .text(let text) = preview.content else { return XCTFail("Expected TypeScript source") }
+        XCTAssertEqual(text, code)
+        let unicode = "Notes\nمرحبا\nAnother line"
+        await api.setWorkspaceFile("notes.txt", data: try XCTUnwrap(unicode.data(using: .utf16)))
+        await preview.load("notes.txt", model: model)
+        guard case .text(let text) = preview.content else { return XCTFail("Expected UTF-16 text") }
+        XCTAssertEqual(text, unicode)
+        await api.setWorkspaceFile("broken.txt", data: Data([0, 0xFF, 0x80]))
+        await preview.load("broken.txt", model: model)
+        XCTAssertNil(preview.content)
+        XCTAssertNotNil(preview.error)
+    }
+
     func testLatePreviewCannotReplaceANewerSelection() async throws {
         let api = ChatAPI()
         let model = try client(api)
@@ -131,7 +177,7 @@ final class WorkspacePreviewTests: XCTestCase {
         await api.setWorkspaceFile("note.rtf", data: data)
         let preview = WorkspacePreview()
         await preview.load("note.rtf", model: model)
-        guard case .office(let file) = preview.content else { return XCTFail("Expected an Office preview") }
+        guard case .quickLook(let file) = preview.content else { return XCTFail("Expected an Office preview") }
         XCTAssertEqual(try Data(contentsOf: file.url), data)
         preview.clear()
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.url.deletingLastPathComponent().path))

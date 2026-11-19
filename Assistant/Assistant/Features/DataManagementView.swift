@@ -66,6 +66,7 @@ struct DataManagementView: View {
                             }.frame(maxWidth: .infinity)
                         }
                         .frame(minWidth: 320, idealWidth: 350, maxWidth: 420)
+                        .background(SplitViewAutosave(name: "Assistant.Data"))
                         .frame(minHeight: 180, maxHeight: .infinity)
                         .overlay {
                             if (!showingRequestedPage || entries.isEmpty) && (hasLoaded || error != nil) && !busy {
@@ -101,7 +102,7 @@ struct DataManagementView: View {
             .foregroundStyle(Theme.secondary)
             .font(.callout)
         }
-        .frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .disabled(busy).task { await load() }
         .task(id: PreviewSelection(path: selectedFile, request: previewRequest)) {
             if let selectedFile { await preview.load(selectedFile, model: model) }

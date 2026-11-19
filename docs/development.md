@@ -65,6 +65,11 @@ Fixture tests do not establish live SSH recovery or production release readiness
 Verify discovery, tunnel cleanup, authenticated reads/writes, server restarts,
 sleep/wake, polling recovery, and partial transfers against a disposable server.
 
+Copy controls use AppKit target/action and a full 28-point hit area, independent
+of prose selection. Hosted tests cover center/edge hit-testing, first-click
+acceptance, and copying the current complete source to a unique test pasteboard
+in both appearances. These do not replace the end-to-end UI copy/paste test.
+
 ## Architecture
 
 | Directory under `Assistant/` | Responsibility |
@@ -145,6 +150,14 @@ only; for example, **Email & Telegram** still submits `both`.
 
 Settings stay mounted after first opening, including drafts when visiting other
 destinations. Disconnecting still requires saving or explicitly discarding a draft.
+The complete menu prefetches at connection and persists per verified installation;
+the first uncached load shows one loading state, not partial static entries.
+The disk cache whitelists group descriptors and field navigation metadata:
+effective values, defaults, help bodies, credentials, instructions and source are
+excluded. Cached descriptors never initialize an editable form. Unchanged menus
+are retained; same-revision metadata updates preserve loaded values and drafts.
+Sidebar, chat, reminder, settings and Data divider widths use stable native
+split-view autosave names. Settings navigation defaults to 270 points.
 Source-free reads and side-effect-free
 skill queries coalesce in flight. Ordinary reads use a bounded, 60-second session cache;
 reopening Settings rechecks expired catalog metadata without clearing drafts.
@@ -166,14 +179,25 @@ executed or loaded. Diagnostics remain selectable technical details, not the
 primary interface.
 
 Data uses a split file browser and native preview pane: safe Markdown text,
-PDFKit, Quick Look for Office, and AVKit for contained audio/video files.
-Previews verify the complete bounded download before rendering: Markdown 2 MiB,
-PDF/Office 16 MiB, media 64 MiB. Unsupported formats/codecs have explicit errors
+inert UTF-8/UTF-16 text/code, ImageIO images, PDFKit, Quick Look for Office/fonts,
+and AVKit for contained audio/video files. Data alone uses the full available width.
+Previews verify the complete bounded download before rendering: text/Markdown 2 MiB,
+images/PDF/Quick Look 16 MiB, media 64 MiB. Image decoding runs off the UI actor,
+rejects images over 80 megapixels, and downsamples the first frame to at most
+4096 pixels per edge before fit/zoom display. HTML and SVG are source-only.
+Unsupported formats/codecs have explicit errors
 and an independent Download action; playlists are not previewed. No autoplay.
 Selection changes, navigation, and normal shutdown stop playback and clear
-preview resources. Office/media files use unique OS temporary directories with
+preview resources. Quick Look/media files use unique OS temporary directories with
 0700 permissions and 0600 files; cleanup also covers cancelled/stale results.
 Abnormal process termination can leave these files for OS temporary-file cleanup.
+
+Disclosure headings are full-width keyboard-accessible buttons throughout the
+app and its sheets. Tool-detail derivation and JSON formatting run off the UI
+actor with immediate loading feedback, cancellation/stale-result protection, and
+a bounded native selectable text viewport rather than an unbounded text layout.
+Sidebar and Settings footers share a fixed height; idle status has a real icon
+and vertically centered text, with a second line only for actual feedback.
 
 ## Design and assets
 

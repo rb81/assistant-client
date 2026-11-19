@@ -61,6 +61,7 @@ struct InboxView: View {
     var body: some View {
         HSplitView {
             threadList.frame(minWidth: 230, idealWidth: 260, maxWidth: 320)
+                .background(SplitViewAutosave(name: isReminders ? "Assistant.Reminders" : "Assistant.Chats"))
             VStack(spacing: 0) {
                 transcriptHeader
                 Divider()

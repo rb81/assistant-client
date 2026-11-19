@@ -49,6 +49,36 @@ final class AssistantUITests: XCTestCase {
         verifySettingsPanes(dark: true)
     }
 
+    /// The retained Settings pane must still review a draft after returning from Chats.
+    @MainActor
+    func testSettingsFooterReviewAfterReturningFromChats() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        let settings = app.buttons["nav-configuration"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.click()
+        let name = app.textFields["Assistant name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 10))
+        waitUntilEnabled(name)
+        let savedStatus = app.staticTexts["All changes saved"]
+        XCTAssertTrue(savedStatus.waitForExistence(timeout: 5))
+        XCTAssertEqual(savedStatus.frame.midY, settings.frame.midY, accuracy: 2)
+        name.click()
+        name.typeKey("a", modifierFlags: .command)
+        name.typeText("Footer draft")
+        app.buttons["nav-inbox"].click()
+        settings.click()
+        let review = app.buttons["Review changes"]
+        XCTAssertTrue(review.waitForExistence(timeout: 5))
+        XCTAssertTrue(review.isHittable)
+        review.click()
+        let save = app.buttons["Save changes"]
+        XCTAssertTrue(save.waitForExistence(timeout: 5), "Review must expose the draft's save actions")
+        XCTAssertTrue(save.isHittable)
+    }
+
     @MainActor
     private func verifySettingsPanes(dark: Bool) {
         let app = XCUIApplication()
@@ -152,7 +182,8 @@ final class AssistantUITests: XCTestCase {
         XCTAssertTrue(destination.waitForExistence(timeout: 5))
         destination.click()
         XCTAssertTrue(app.textFields["IMAP server"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.otherElements["pending-settings-banner"].exists)
+        let banner = app.descendants(matching: .any).matching(identifier: "pending-settings-banner").firstMatch
+        XCTAssertTrue(banner.exists)
         app.buttons["Review & Apply"].firstMatch.click()
         XCTAssertTrue(app.staticTexts["Saved values awaiting activation"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Pane draft"].exists)
@@ -162,7 +193,7 @@ final class AssistantUITests: XCTestCase {
         waitUntilEnabled(apply)
         apply.click()
         let applied = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "exists == false"), object: app.otherElements["pending-settings-banner"])
+            predicate: NSPredicate(format: "exists == false"), object: banner)
         XCTAssertEqual(XCTWaiter.wait(for: [applied], timeout: 10), .completed)
     }
 
@@ -192,7 +223,7 @@ final class AssistantUITests: XCTestCase {
         }
     }
 
-    /// A workspace click previews in place and leaves an explicit download action available.
+    /// Markdown, image zoom, and inert source previews share the full-width workspace in both appearances.
     @MainActor
     func testWorkspaceMarkdownPreviewInBothAppearances() {
         for dark in [false, true] {
@@ -205,11 +236,26 @@ final class AssistantUITests: XCTestCase {
             let file = app.buttons["workspace-file-README.md"]
             XCTAssertTrue(file.waitForExistence(timeout: 10))
             file.click()
-            XCTAssertTrue(app.otherElements["workspace-preview"].waitForExistence(timeout: 10))
-            let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "A verified document.")).firstMatch
+            XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "workspace-preview").firstMatch.waitForExistence(timeout: 10))
+            let text = app.descendants(matching: .any).matching(NSPredicate(
+                format: "label CONTAINS %@ OR value CONTAINS %@", "A verified document.", "A verified document.")).firstMatch
             XCTAssertTrue(text.waitForExistence(timeout: 10))
             XCTAssertTrue(app.buttons["Download"].firstMatch.exists)
             capture(app, name: dark ? "Workspace preview dark" : "Workspace preview light")
+            app.buttons["workspace-file-palette.png"].click()
+            let zoom = app.buttons["Zoom in"]
+            XCTAssertTrue(zoom.waitForExistence(timeout: 10))
+            XCTAssertGreaterThan(zoom.frame.maxX, app.windows.firstMatch.frame.maxX - 80)
+            for _ in 0..<4 { zoom.click() }
+            XCTAssertFalse(zoom.isEnabled)
+            app.buttons["Fit"].click()
+            XCTAssertTrue(zoom.isEnabled)
+            capture(app, name: dark ? "Workspace image dark" : "Workspace image light")
+            app.buttons["workspace-file-source.html"].click()
+            let source = app.textViews["File or response text"]
+            XCTAssertTrue(source.waitForExistence(timeout: 10))
+            XCTAssertEqual(source.value as? String, "<h1>Inert source preview</h1>\n<script>Not executed</script>")
+            XCTAssertEqual(app.webViews.count, 0)
             app.terminate()
         }
     }
@@ -309,14 +355,19 @@ final class AssistantUITests: XCTestCase {
         XCTAssertTrue(app.sliders["Playback position"].exists)
         XCTAssertTrue(app.buttons["Download"].exists)
         capture(app, name: "Chat attachment and external email light")
-        app.staticTexts["task_complete"].click()
-        let completion = jsonField("response", in: app)
+        let completeRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "task_complete")).firstMatch
+        XCTAssertTrue(completeRow.waitForExistence(timeout: 5))
+        XCTAssertGreaterThan(completeRow.frame.width, 200, "The disclosure hit target must extend beyond the tool name")
+        completeRow.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).click()
+        let completion = app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "\"response\"")).firstMatch
         XCTAssertTrue(completion.waitForExistence(timeout: 5))
         let source = completion.value as? String ?? completion.label
         XCTAssertFalse(source.contains("\"input\""))
         XCTAssertFalse(source.contains("\"result\""))
-        app.staticTexts["calendar_lookup"].click()
-        XCTAssertTrue(jsonField("error", in: app).exists)
+        let errorRow = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "calendar_lookup")).firstMatch
+        XCTAssertGreaterThan(errorRow.frame.width, 200)
+        errorRow.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).click()
+        XCTAssertTrue(app.textViews.matching(NSPredicate(format: "value CONTAINS %@", "\"error\"")).firstMatch.waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Error"].exists)
         capture(app, name: "Tool detail JSON light")
         app.terminate()
@@ -331,7 +382,7 @@ final class AssistantUITests: XCTestCase {
         let thread = app.buttons["chat-thread-7"]
         XCTAssertTrue(thread.waitForExistence(timeout: 10))
         thread.click()
-        let latest = app.staticTexts["live_tool_3"]
+        let latest = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "live_tool_3")).firstMatch
         XCTAssertTrue(latest.waitForExistence(timeout: 20))
         XCTAssertTrue(latest.isHittable, "New tool calls should stay inside the visible transcript")
         capture(app, name: "Live tool following light")
@@ -372,10 +423,11 @@ final class AssistantUITests: XCTestCase {
         app.terminate()
     }
 
+    /// JSON uses native selectable text in previews and lightweight text labels in logs.
     @MainActor
     private func jsonField(_ key: String, in app: XCUIApplication) -> XCUIElement {
         let needle = "\"\(key)\""
-        return app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", needle, needle)).firstMatch
+        return app.descendants(matching: .any).matching(NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", needle, needle)).firstMatch
     }
 
     @MainActor
@@ -389,7 +441,8 @@ final class AssistantUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Copy code"].waitForExistence(timeout: 10))
         app.buttons["Copy code"].click()
         XCTAssertTrue(app.buttons["Copied"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["workspace_search"].exists, "Tool calls render inline in the transcript")
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "workspace_search")).firstMatch.exists,
+                      "Tool calls render inline in the transcript")
         capture(app, name: dark ? "Chat dark" : "Chat light")
         let composer = app.textViews["Message Assistant"]
         composer.click()
@@ -430,7 +483,7 @@ final class AssistantUITests: XCTestCase {
         app.buttons["Save configuration"].click()
         let feedback = app.buttons["settings-feedback"]
         XCTAssertTrue(feedback.waitForExistence(timeout: 10))
-        XCTAssertEqual(feedback.label, "Saved. Apply changes from Connections when you are ready.")
+        XCTAssertEqual(feedback.label, "Saved. Choose Review & Apply when you are ready.")
         XCTAssertEqual(nameField.value as? String, "Updated")
         XCTAssertFalse(app.buttons["Agent.yaml"].exists)
         app.buttons["settings-section-app-app"].click()

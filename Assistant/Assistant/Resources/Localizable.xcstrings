@@ -268,6 +268,9 @@
     "Code" : {
 
     },
+    "Collapsed" : {
+
+    },
     "Configuration saved and application services activated." : {
 
     },
@@ -424,6 +427,9 @@
     "Display options" : {
 
     },
+    "Document and font previews use macOS Quick Look. Availability depends on installed preview support." : {
+
+    },
     "Done" : {
 
     },
@@ -451,6 +457,9 @@
     "Error: %@" : {
 
     },
+    "Expanded" : {
+
+    },
     "Failed" : {
 
     },
@@ -460,10 +469,16 @@
     "File operation completed." : {
 
     },
+    "File or response text" : {
+
+    },
     "File preview" : {
 
     },
     "Find a setting" : {
+
+    },
+    "Fit" : {
 
     },
     "General" : {
@@ -482,6 +497,12 @@
 
     },
     "Identifier" : {
+
+    },
+    "Image preview" : {
+
+    },
+    "Image preview · First frame" : {
 
     },
     "Include what the Assistant should do and when. Preferences load automatically with this skill for admin requests." : {
@@ -556,7 +577,13 @@
     "Loading conversation…" : {
 
     },
+    "Loading details…" : {
+
+    },
     "Loading models…" : {
+
+    },
+    "Loading settings…" : {
 
     },
     "Loading verified preview…" : {
@@ -724,9 +751,6 @@
     "OK" : {
 
     },
-    "Office previews use macOS Quick Look. Availability depends on installed preview support." : {
-
-    },
     "On this Mac" : {
 
     },
@@ -797,7 +821,7 @@
     "Preview" : {
 
     },
-    "Preview Markdown, PDF and Office documents, or play audio and video." : {
+    "Preview images, text, code, Markdown, PDF, Office documents and fonts, or play audio and video." : {
 
     },
     "Preview is not available for this file type. Download it to open it in another app." : {
@@ -1052,6 +1076,9 @@
     "Saved service statuses could not be read: %@" : {
 
     },
+    "Saved settings menu could not be read: %@" : {
+
+    },
     "Saved settings need applying" : {
 
     },
@@ -1166,13 +1193,13 @@
     "Settings changed while loading. Reload the saved changes." : {
 
     },
-    "Settings feedback" : {
-
-    },
     "Settings saved since the last successful apply. This is not a comparison with live container values." : {
 
     },
     "Settings sections" : {
+
+    },
+    "Settings unavailable" : {
 
     },
     "Setup completed successfully." : {
@@ -1370,6 +1397,9 @@
     "This file exceeds the %@ limit for this view." : {
 
     },
+    "This file is not supported UTF-8 or UTF-16 text. Download it to use another app." : {
+
+    },
     "This folder is empty." : {
 
     },
@@ -1377,6 +1407,9 @@
 
     },
     "This image format cannot be displayed. Download the file to open it in another app." : {
+
+    },
+    "This image is too large to preview safely. Download it to open it in another app." : {
 
     },
     "This is not a permission request. Check the server’s receipts before trying the action again." : {
@@ -1505,10 +1538,19 @@
     "Zero Data Retention endpoints only" : {
 
     },
+    "Zoom in" : {
+
+    },
+    "Zoom out" : {
+
+    },
     "live updates" : {
 
     },
     "macOS cannot play this media format or codec. Download it to use another player." : {
+
+    },
+    "macOS could not decode this image. It may be damaged or unsupported." : {
 
     },
     "permission requests" : {

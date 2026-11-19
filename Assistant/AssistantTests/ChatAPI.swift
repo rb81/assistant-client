@@ -18,10 +18,12 @@ actor ChatAPI: ManagementAPI {
     private var activationPending = false
     private var serviceFailures: [ClientError] = []
     private var workspaceFiles: [String: Data] = [:]
+    private var settingsCatalog: JSONValue?
     var queryPayloads: [JSONValue] = []
 
     func failServices(_ failures: [ClientError]) { serviceFailures = failures }
     func setWorkspaceFile(_ path: String, data: Data) { workspaceFiles[path] = data }
+    func setSettingsCatalog(_ catalog: JSONValue) { settingsCatalog = catalog }
 
     func setAssistantName(_ name: String) { assistantName = name }
     func setActivationPending(_ pending: Bool) { activationPending = pending }
@@ -100,6 +102,9 @@ actor ChatAPI: ManagementAPI {
                 "size_bytes": .integer(Int64(data.count)), "next_offset": .integer(Int64(end)),
                 "sha256": .string(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
             ]))
+        }
+        if resource == "configuration/catalog", let settingsCatalog {
+            return try JSONEncoder().encode(settingsCatalog)
         }
         if resource == "configuration/settings?group=identity" {
             return try JSONEncoder().encode(JSONValue.object(["settings": .array([

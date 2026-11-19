@@ -18,7 +18,8 @@ enum Theme {
     static let sidebarIdeal: CGFloat = 180
     static let sidebarMaximum: CGFloat = 220
     static let contentWidth: CGFloat = 860
-    static let settingsCategoryWidth: CGFloat = 210
+    static let settingsCategoryWidth: CGFloat = 270
+    static let footerHeight: CGFloat = 64
     static let settingsDetailMinimum: CGFloat = 340
     static let windowMinimum = CGSize(width: 1000, height: 700)
     static let windowDefault = CGSize(width: 1280, height: 860)

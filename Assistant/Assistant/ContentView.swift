@@ -59,12 +59,12 @@ struct ContentView: View {
                 }.padding(.horizontal, 10)
                 Spacer(minLength: 24)
             }
+            .background(SplitViewAutosave(name: "Assistant.MainSidebar"))
             .background(Theme.panel)
             .navigationSplitViewColumnWidth(min: Theme.sidebarMinimum, ideal: Theme.sidebarIdeal, max: Theme.sidebarMaximum)
             .disabled(model.configurationApplying)
-            .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 9) {
-                    Divider().padding(.bottom, 3)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PaneFooter {
                     HStack {
                         statusControl
                         Spacer(minLength: 0)
@@ -79,9 +79,6 @@ struct ContentView: View {
                 }
                 .foregroundStyle(Theme.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
-                .padding(.top, 8)
             }
         } detail: {
             VStack(spacing: 0) {
@@ -189,6 +186,7 @@ struct ContentView: View {
         .sheet(isPresented: $model.activityPresented) { ActivityView(model: model) }
         .sheet(isPresented: $model.activationReviewPresented) { ApplySettingsView(model: model) }
         .task(id: model.health?.instanceID) { await model.prefetchSkills() }
+        .task(id: model.health?.instanceID) { await model.prefetchSettingsMenu() }
         .task(id: model.health?.instanceID) {
             guard model.health?.capabilities.contains("configuration.activation") == true else { return }
             while !Task.isCancelled {
@@ -217,6 +215,7 @@ struct ContentView: View {
             }
             Button("Keep editing", role: .cancel) {}
         }
+        .disclosureGroupStyle(FullRowDisclosureStyle())
     }
 
     /// Connection, data, and support tools stay out of the way until needed.

@@ -37,7 +37,7 @@ struct ConfigurationView: View {
     @State private var modelAccessLoaded = false
     @AppStorage("settings.showIdentifiers") private var showIdentifiers = false
 
-    private var navigation: SettingsNavigation? { configuration.map(SettingsNavigation.init) }
+    private var navigation: SettingsNavigation? { (configuration ?? model.settingsMenu).map(SettingsNavigation.init) }
 
     /// All changes stay in memory until a server-reviewed draft is explicitly confirmed.
     var body: some View {
@@ -46,7 +46,6 @@ struct ConfigurationView: View {
                 categoryNavigation
                 detailPane
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-            Divider()
             actionFooter
         }
         .task { await load() }
@@ -71,35 +70,44 @@ struct ConfigurationView: View {
     /// Settings sections stay in place when the detail page changes.
     private var categoryNavigation: some View {
         SettingsNavigationPane(title: String(localized: "Settings sections")) {
-            ForEach(SettingsCategory.allCases) { scope in
-                let groups = navigation?.pages(in: scope) ?? []
-                if scope == .app || scope == .assistant || !groups.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Label(scope.title, systemImage: scope.symbol)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Theme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 10).padding(.vertical, 7)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .accessibilityAddTraits(.isHeader)
-                            .accessibilityIdentifier("settings-category-\(scope.rawValue)")
-                        if scope == .app {
-                            sectionButton(String(localized: "On this Mac"), page: .app, in: scope, identifier: "app")
-                        }
-                        ForEach(groups) { group in
-                            sectionButton(navigation?.title(group, in: scope) ?? group.title,
-                                          page: .group(group.id), in: scope, identifier: group.id)
-                        }
-                        if scope == .assistant {
-                            sectionButton(String(localized: "Instructions"), page: .instructions, in: scope, identifier: "instructions")
-                            sectionButton(String(localized: "Skills"), page: .skills, in: scope, identifier: "skills")
+            if let navigation {
+                ForEach(SettingsCategory.allCases) { scope in
+                    let groups = navigation.pages(in: scope)
+                    if scope == .app || scope == .assistant || !groups.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(scope.title, systemImage: scope.symbol)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Theme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 10).padding(.vertical, 7)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .accessibilityAddTraits(.isHeader)
+                                .accessibilityIdentifier("settings-category-\(scope.rawValue)")
+                            if scope == .app {
+                                sectionButton(String(localized: "On this Mac"), page: .app, in: scope, identifier: "app")
+                            }
+                            ForEach(groups) { group in
+                                sectionButton(navigation.title(group, in: scope),
+                                              page: .group(group.id), in: scope, identifier: group.id)
+                            }
+                            if scope == .assistant {
+                                sectionButton(String(localized: "Instructions"), page: .instructions, in: scope, identifier: "instructions")
+                                sectionButton(String(localized: "Skills"), page: .skills, in: scope, identifier: "skills")
+                            }
                         }
                     }
                 }
+            } else if error != nil {
+                Label("Settings unavailable", systemImage: "exclamationmark.triangle").padding(12)
+            } else {
+                ProgressView("Loading settings…")
+                    .controlSize(.small).padding(12)
+                    .accessibilityIdentifier("settings-menu-loading")
             }
         }
-        .frame(minWidth: 185, idealWidth: Theme.settingsCategoryWidth, maxWidth: 240)
-        .disabled(busy)
+        .frame(minWidth: 220, idealWidth: Theme.settingsCategoryWidth, maxWidth: 380)
+        .background(SplitViewAutosave(name: "Assistant.Settings", defaultLeadingWidth: Theme.settingsCategoryWidth))
+        .disabled(busy || configuration == nil)
     }
 
     private func sectionButton(_ title: String, page destination: SettingsPage, in scope: SettingsCategory,
@@ -146,7 +154,14 @@ struct ConfigurationView: View {
                     .menuStyle(.borderlessButton).frame(width: 24).accessibilityLabel("Display options")
                 }
             }.padding(.horizontal, 20).frame(height: 44)
-            if page == .instructions && search.isEmpty {
+            if configuration == nil {
+                if let error {
+                    ContentUnavailableView("Settings unavailable", systemImage: "exclamationmark.triangle",
+                                           description: Text(error))
+                } else {
+                    ProgressView("Loading settings…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            } else if page == .instructions && search.isEmpty {
                 instructionsEditor
                     .padding(.horizontal, 20).padding(.bottom, 20)
                     .accessibilityIdentifier("settings-detail")
@@ -190,27 +205,47 @@ struct ConfigurationView: View {
         }.frame(minWidth: Theme.settingsDetailMinimum, maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Review state, background progress and feedback have permanent space below all panes.
+    private var footerLoading: Bool {
+        busy || !loadingGroups.isEmpty || instructionsLoading || (configuration == nil && error == nil)
+    }
+
+    private var footerTitle: String {
+        if configuration == nil { return error == nil ? String(localized: "Loading settings…") : String(localized: "Settings unavailable") }
+        if model.configurationDirty { return String(localized: "Unsaved changes") }
+        if model.activationState == .pending { return String(localized: "Saved · Needs applying") }
+        if model.activationState == .unknown { return String(localized: "Activation needs checking") }
+        return String(localized: "All changes saved")
+    }
+
+    /// Single-line status is centered; a second line exists only when there is actual feedback.
     private var actionFooter: some View {
-        HStack(spacing: 12) {
-            StableProgress(active: busy || !loadingGroups.isEmpty || instructionsLoading)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.configurationDirty ? String(localized: "Unsaved changes") :
-                        model.activationState == .pending ? String(localized: "Saved · Needs applying") :
-                        model.activationState == .unknown ? String(localized: "Activation needs checking") :
-                        String(localized: "All changes saved"))
-                    .font(.caption).foregroundStyle(Theme.secondary).lineLimit(1)
-                Button { showingFeedback.toggle() } label: {
-                    Text(error ?? credentialError ?? notice ?? " ").font(.caption)
-                        .foregroundStyle(error != nil || credentialError != nil ? .red : Theme.secondary)
-                        .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+        PaneFooter {
+            HStack(spacing: 12) {
+                Group {
+                    if footerLoading { ProgressView().controlSize(.small) }
+                    else {
+                        Image(systemName: error != nil || credentialError != nil ? "exclamationmark.circle" :
+                                model.configurationDirty ? "pencil.circle" :
+                                model.activationState != .active ? "clock" : "checkmark.circle")
+                            .foregroundStyle(error != nil || credentialError != nil ? Color.red : Theme.accent)
+                    }
+                }.frame(width: 20, height: 20)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(footerTitle)
+                        .font(.caption).foregroundStyle(Theme.secondary).lineLimit(1)
+                    if let feedback = error ?? credentialError ?? notice {
+                        Button { showingFeedback.toggle() } label: {
+                            Text(feedback).font(.caption)
+                                .foregroundStyle(error != nil || credentialError != nil ? .red : Theme.secondary)
+                                .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings-feedback")
+                        .accessibilityLabel(Text(feedback))
+                        .frame(height: 16)
+                    }
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("settings-feedback")
-                .accessibilityLabel(Text(error ?? credentialError ?? notice ?? String(localized: "Settings feedback")))
-                .disabled(error == nil && credentialError == nil && notice == nil)
-                .accessibilityHidden(error == nil && credentialError == nil && notice == nil)
-                .frame(height: 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .popover(isPresented: $showingFeedback) {
                     VStack(alignment: .leading, spacing: 12) {
                         if let error { ErrorBanner(message: error) }
@@ -222,25 +257,24 @@ struct ConfigurationView: View {
                         Button("Done") { showingFeedback = false }
                     }.padding().frame(width: 420)
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if canSave {
-                if configuration?.setupComplete == false {
-                    Button("Save & Start") { apply = true; confirming = true }
-                        .buttonStyle(PrimaryButtonStyle()).disabled(busy)
+                if canSave {
+                    if configuration?.setupComplete == false {
+                        Button("Save & Start") { apply = true; confirming = true }
+                            .buttonStyle(PrimaryButtonStyle()).disabled(busy)
+                    } else {
+                        Button("Save & Apply") { apply = true; confirming = true }.disabled(busy)
+                        Button("Save changes") { apply = false; confirming = true }
+                            .buttonStyle(PrimaryButtonStyle()).disabled(busy)
+                    }
                 } else {
-                    Button("Save & Apply") { apply = true; confirming = true }.disabled(busy)
-                    Button("Save changes") { apply = false; confirming = true }
-                        .buttonStyle(PrimaryButtonStyle()).disabled(busy)
+                    if !model.configurationDirty && model.activationState != .active {
+                        Button("Review & Apply") { model.activationReviewPresented = true }.disabled(busy)
+                    }
+                    Button("Review changes") { Task { await review() } }
+                        .buttonStyle(PrimaryButtonStyle()).disabled(!model.configurationDirty || busy)
                 }
-            } else {
-                if !model.configurationDirty && model.activationState != .active {
-                    Button("Review & Apply") { model.activationReviewPresented = true }.disabled(busy)
-                }
-                Button("Review changes") { Task { await review() } }
-                    .buttonStyle(PrimaryButtonStyle()).disabled(!model.configurationDirty || busy)
             }
-        }.padding(.horizontal, 20).padding(.vertical, 12)
+        }
     }
 
     private func selectPage(_ destination: SettingsPage, in scope: SettingsCategory) {
@@ -489,8 +523,23 @@ struct ConfigurationView: View {
     private func checkForExternalChanges() async {
         guard configuration != nil, !busy else { return }
         do {
-            let latest = try await model.cachedRead("configuration/catalog")
+            let latest = try await model.configurationCatalog()
             guard latest != catalogSnapshot else { return }
+            let updated = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(latest))
+            if updated.revision == configuration?.revision {
+                var merged = updated
+                merged.mergeLoadedValues(loadedFields)
+                configuration = merged
+                model.setupRequired = !merged.setupComplete
+                catalogSnapshot = latest
+                loadedGroups = loadedGroups.filter { id in
+                    let owners = Set([id] + (merged.groups ?? []).filter { $0.parent == id }.map(\.id))
+                    return merged.settings.filter { owners.contains($0.group) }.allSatisfy { loadedFields[$0.key] != nil }
+                }
+                reconcilePage()
+                await loadPage()
+                return
+            }
             guard !model.configurationDirty else {
                 error = String(localized: "Settings changed on the server. Your draft is preserved; discard it and reload before saving.")
                 return
@@ -533,7 +582,7 @@ struct ConfigurationView: View {
             }
             let result: JSONValue
             if let catalog { result = catalog }
-            else { result = try await model.cachedRead("configuration/catalog") }
+            else { result = try await model.configurationCatalog() }
             configuration = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(result))
             catalogSnapshot = result
             model.setupRequired = configuration?.setupComplete == false
@@ -542,13 +591,7 @@ struct ConfigurationView: View {
             }
             instructions = ""; instructionsOriginal = ""; instructionsLoaded = false
             loadedGroups = []; loadedFields = [:]
-            if case .group(let id) = page, navigation?.pages(in: category).contains(where: { $0.id == id }) != true {
-                if let first = navigation?.pages(in: category).first {
-                    selectPage(.group(first.id), in: category)
-                } else {
-                    selectPage(.instructions, in: .assistant)
-                }
-            }
+            reconcilePage()
             values = [:]; acknowledge = false; preview = nil; reviewedPayload = nil
             model.configurationDirty = false
             error = nil
@@ -557,6 +600,13 @@ struct ConfigurationView: View {
             async let modelLoad: () = loadModelAccess()
             _ = await (pageLoad, credentialsLoad, modelLoad)
         } catch { self.error = error.presentableMessage ?? self.error }
+    }
+
+    private func reconcilePage() {
+        if case .group(let id) = page, navigation?.pages(in: category).contains(where: { $0.id == id }) != true {
+            if let first = navigation?.pages(in: category).first { selectPage(.group(first.id), in: category) }
+            else { selectPage(.instructions, in: .assistant) }
+        }
     }
 
     private func loadCredentials() async {
@@ -615,7 +665,7 @@ struct ConfigurationView: View {
                 guard loaded.revision == configuration.revision else { throw ClientError.operationFailed(
                     String(localized: "Settings changed on the server. Save or discard your draft, then reload.")) }
                 for field in loaded.settings { loadedFields[field.key] = field }
-                self.configuration?.settings = self.configuration?.settings.map { loadedFields[$0.key] ?? $0 } ?? []
+                self.configuration?.mergeLoadedValues(loadedFields)
                 loadedGroups.insert(id)
             }
             error = nil

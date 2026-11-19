@@ -23,7 +23,9 @@ struct ToolRunView: View {
     }
 
     private var rows: some View {
-        ForEach(calls) { call in ToolCallRow(call: call) }
+        LazyVStack(alignment: .leading, spacing: 8) {
+            ForEach(calls) { call in ToolCallRow(call: call) }
+        }
     }
 
     /// Distinct tool names in call order, so a collapsed run still says what the assistant did.
@@ -51,11 +53,7 @@ struct ToolCallRow: View {
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 8) {
-                if let details = call.details {
-                    ChatJSON(value: details)
-                } else {
-                    Text("No details were recorded.").font(.caption).foregroundStyle(Theme.secondary)
-                }
+                ChatJSON(call: call)
                 if call.status == "interrupted" {
                     Text("This call stopped without a recorded result.").font(.caption).foregroundStyle(Theme.secondary)
                 }
@@ -75,7 +73,6 @@ struct ToolCallRow: View {
             }
             .padding(.vertical, 3)
             .contentShape(Rectangle())
-            .onTapGesture { expanded.toggle() }
         }
     }
 

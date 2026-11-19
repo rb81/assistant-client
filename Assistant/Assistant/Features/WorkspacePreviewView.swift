@@ -27,16 +27,20 @@ struct WorkspacePreviewView: View {
                     ScrollView { MarkdownContent(text: text).padding(12).frame(maxWidth: .infinity, alignment: .leading) }
                 case .pdf(let document):
                     PDFPreview(document: document)
-                case .office(let file):
-                    OfficePreview(file: file)
-                    Text("Office previews use macOS Quick Look. Availability depends on installed preview support.")
+                case .quickLook(let file):
+                    DocumentPreview(file: file)
+                    Text("Document and font previews use macOS Quick Look. Availability depends on installed preview support.")
                         .font(.caption).foregroundStyle(Theme.secondary)
                 case .media(_, let player):
                     VideoPlayer(player: player).frame(maxWidth: .infinity, maxHeight: .infinity)
+                case .image(let image):
+                    ImagePreview(image: image).id(path)
+                case .text(let text):
+                    SourceTextView(text: text)
                 }
             } else {
                 ContentUnavailableView("Select a file", systemImage: "doc.text.magnifyingglass",
-                                       description: Text("Preview Markdown, PDF and Office documents, or play audio and video."))
+                                       description: Text("Preview images, text, code, Markdown, PDF, Office documents and fonts, or play audio and video."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -61,13 +65,14 @@ private struct PDFPreview: NSViewRepresentable {
     static func dismantleNSView(_ view: PDFView, coordinator: ()) { view.document = nil }
 }
 
-/// Quick Look displays Office files without launching a separate editor.
-private struct OfficePreview: NSViewRepresentable {
+/// Quick Look displays supported documents and fonts without launching a separate editor.
+private struct DocumentPreview: NSViewRepresentable {
     let file: PreviewFile
     func makeNSView(context: Context) -> NSView {
         guard let view = QLPreviewView(frame: .zero, style: .normal) else {
             return NSTextField(labelWithString: String(localized: "Quick Look is unavailable. Download this document to open it."))
         }
+
         view.shouldCloseWithWindow = false
         view.autostarts = false
         return view
@@ -77,4 +82,32 @@ private struct OfficePreview: NSViewRepresentable {
         view.previewItem = file.url as NSURL
     }
     static func dismantleNSView(_ view: NSView, coordinator: ()) { (view as? QLPreviewView)?.close() }
+}
+
+/// Fit-to-pane images also offer bounded zoom and scrolling for close inspection.
+private struct ImagePreview: View {
+    let image: CGImage
+    @State private var zoom: CGFloat = 1
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Text("Image preview · First frame").font(.caption).foregroundStyle(Theme.secondary)
+                Spacer()
+                Button("Zoom out", systemImage: "minus.magnifyingglass") { zoom = max(0.25, zoom / 1.5) }
+                    .labelStyle(.iconOnly).disabled(zoom <= 0.25)
+                Button("Fit") { zoom = 1 }
+                Button("Zoom in", systemImage: "plus.magnifyingglass") { zoom = min(4, zoom * 1.5) }
+                    .labelStyle(.iconOnly).disabled(zoom >= 4)
+            }.buttonStyle(.borderless)
+            GeometryReader { geometry in
+                let fit = min(geometry.size.width / CGFloat(image.width), geometry.size.height / CGFloat(image.height), 1)
+                ScrollView([.horizontal, .vertical]) {
+                    Image(image, scale: 1, label: Text("Image preview")).resizable()
+                        .frame(width: CGFloat(image.width) * fit * zoom, height: CGFloat(image.height) * fit * zoom)
+                        .frame(minWidth: geometry.size.width, minHeight: geometry.size.height)
+                }
+            }
+        }
+    }
 }

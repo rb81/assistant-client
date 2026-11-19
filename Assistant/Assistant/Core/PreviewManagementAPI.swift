@@ -34,6 +34,16 @@ actor PreviewManagementAPI: ManagementAPI {
         }
     }
 
+    /// Two small brand-color panels exercise native image preview and zoom without external assets.
+    private var image: Data {
+        get throws {
+            guard let data = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAHgAAABQCAIAAABd+SbeAAAAz0lEQVR4nO3QQQ3DQAAEsRAtiiApm/7LKq/AmD3JkhH4+nx/x3n+93GufE30rnxN9C7RokXn8jXRu0SLFp3L10TvEi1adC5fE71LtGjRuXxN9C7RokXn8jXRu0SLFp3L10TvEi1adC5fE71LtGjRuXxN9C7RokXn8jXRu0SLFp3L10TvEi1adC5fE71LtGjRuXxN9C7RokXn8jXRu0SLFp3L10TvEi1adC5fE71LtGjRuXxN9C7RokXn8jXRu0SLFp3L10TvEi1adC5fE73rBaHp8Kr0ztHNAAAAAElFTkSuQmCC") else {
+                throw ClientError.malformedResponse
+            }
+            return data
+        }
+    }
+
     /// Fixture responses mirror the wire contract and reject any unmodeled operation.
     func request(_ resource: String, body: JSONValue?, key: String?) async throws -> Data {
         if offline { throw URLError(.notConnectedToInternet) }
@@ -190,11 +200,19 @@ actor PreviewManagementAPI: ManagementAPI {
         } else if resource == "query", body?["action"] == .string("workspace.list") {
             value = .object(["entries": .array([
                 .object(["path": .string("notes"), "is_dir": .bool(true), "size_bytes": .integer(0)]),
-                .object(["path": .string("README.md"), "is_dir": .bool(false), "size_bytes": .integer(48)])
-            ]), "total": .integer(2)])
+                .object(["path": .string("README.md"), "is_dir": .bool(false), "size_bytes": .integer(48)]),
+                .object(["path": .string("palette.png"), "is_dir": .bool(false), "size_bytes": .integer(264)]),
+                .object(["path": .string("source.html"), "is_dir": .bool(false), "size_bytes": .integer(59)])
+            ]), "total": .integer(4)])
         } else if resource == "query", body?["action"] == .string("workspace.read"),
-                  body?["arguments"]?["path"] == .string("README.md") {
-            let content = Data("# Workspace preview fixture\n\nA verified document.".utf8)
+                  let path = body?["arguments"]?["path"]?.string,
+                  ["README.md", "palette.png", "source.html"].contains(path) {
+            let content: Data
+            switch path {
+            case "palette.png": content = try image
+            case "source.html": content = Data("<h1>Inert source preview</h1>\n<script>Not executed</script>".utf8)
+            default: content = Data("# Workspace preview fixture\n\nA verified document.".utf8)
+            }
             value = .object([
                 "content_base64": .string(content.base64EncodedString()),
                 "size_bytes": .integer(Int64(content.count)), "next_offset": .integer(Int64(content.count)),

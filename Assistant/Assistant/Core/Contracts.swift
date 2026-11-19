@@ -206,7 +206,7 @@ struct SettingField: Decodable, Identifiable, Sendable {
     let group: String
     let key: String
     let label: String
-    let value: String
+    var value: String
     let secret: Bool
     let boolean: Bool
     let editable: Bool
@@ -267,6 +267,15 @@ struct FullConfiguration: Decodable, Sendable {
     var agentYamlBackups: [String]?
     var instructionsConfigured: Bool?
     var credentialNames: [String]?
+
+    /// Keep effective values without replacing refreshed navigation and field presentation metadata.
+    mutating func mergeLoadedValues(_ loaded: [String: SettingField]) {
+        settings = settings.map { descriptor in
+            var field = descriptor
+            if let effective = loaded[field.key] { field.value = effective.value }
+            return field
+        }
+    }
 }
 
 /// A redacted saved value; credentials and instruction bodies never enter this review.

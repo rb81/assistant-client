@@ -72,12 +72,13 @@ struct MarkdownContent: View {
                 switch block {
                 case .prose(let text):
                     Text(Self.prose(text)).lineSpacing(3)
+                        .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 case .code(let language, let source):
                     CodeBlock(language: language, source: source)
                 }
             }
-        }.textSelection(.enabled)
+        }
     }
 
     /// Headings and lists remain native selectable text; inline Markdown handles links and emphasis.
@@ -129,24 +130,16 @@ struct CopyTextButton: View {
     let text: String
     var label = String(localized: "Copy message")
     var compact = false
+    var pasteboard: NSPasteboard = .general
     @State private var copied = false
     @State private var copyFailed = false
 
     var body: some View {
-        Button {
-            copied = MessageClipboard.copy(text)
+        NativeCopyControl(label: copied ? String(localized: "Copied") : label, compact: compact, copied: copied) {
+            copied = MessageClipboard.copy(text, to: pasteboard)
             copyFailed = !copied
-        } label: {
-            if compact {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .frame(width: 28, height: 28).contentShape(Rectangle())
-            } else {
-                Label(copied ? String(localized: "Copied") : label, systemImage: copied ? "checkmark" : "doc.on.doc")
-            }
         }
-        .buttonStyle(.plain).font(.caption).textSelection(.disabled)
-        .accessibilityLabel(copied ? String(localized: "Copied") : label)
-        .help(label)
+        .fixedSize()
         .onChange(of: text) { copied = false }
         .alert("Couldn’t copy text", isPresented: $copyFailed) {
             Button("OK", role: .cancel) {}

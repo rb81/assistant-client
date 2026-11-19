@@ -15,9 +15,9 @@ connection without keeping a terminal open.
 | **Chats** | Search conversations, mark them read or unread, select multiline prose, copy any complete message, open attachments, play audio, and inspect tool activity. Replies use your configured assistant's name. |
 | **Reminders** | Check schedules and past results, with read/unread state preserved across launches. Start a new chat to ask about a scheduled run. |
 | **Connections** | Open service health, activation, connection diagnostics, and request timings directly from the sidebar. |
-| **Data** | Preview Markdown/PDF inline, view Office files with Quick Look, and play supported audio/video. Download and manage workspace files. |
+| **Data** | Use the full-width browser to preview images with zoom, text/code, Markdown, PDF, Office documents and fonts, or play supported audio/video. Download and manage workspace files. |
 | **Activity** | Use the toolbar bell for permission requests, real reply/update notices, and operation history. Unconfirmed actions are distinct from approval requests and are never automatically repeated. |
-| **Settings** | Keep ordinary setup beside each feature's enable switch, with power-user tuning under Advanced. Model tools and speech share one budget page; calendar defaults list configured accounts. Retain drafts while navigating, edit instructions in a bounded Markdown editor, and review before saving. A persistent **Review & Apply** banner lists saved changes awaiting activation. Skills prefetch and show 20 per page. |
+| **Settings** | Restore the complete cached menu without progressively appearing sections. Keep ordinary setup beside each feature's enable switch, with power-user tuning under Advanced. Retain drafts while navigating, edit instructions in a bounded Markdown editor, and review before saving. A persistent **Review & Apply** banner lists saved changes awaiting activation. Skills prefetch and show 20 per page; adjustable pane widths are remembered. |
 | **OpenRouter models** | Search cached, capability-filtered model lists. Require ZDR in server settings; manage weekly/manual catalog refresh in local App settings. |
 | **Live updates** | Receive resumable updates with polling fallback and optional macOS notifications while the app is open. |
 
@@ -47,7 +47,8 @@ passwords. Quitting closes the tunnel, not the server or running tasks.
 |---|---|
 | **Credentials** | API tokens stay in session memory and are not saved in connection profiles. |
 | **Conversation cache** | Conversation bodies and tool details are cached per installation. The cache is not separately encrypted. Clear it in **Settings > General > Clear conversation cache**. |
-| **File previews** | Reads are digest-verified. Office and media previews use private temporary files, removed on dismissal or normal shutdown; an abnormal termination can leave files in the OS temporary directory. Markdown/PDF previews stay in memory. |
+| **File previews** | Reads are digest-verified. Quick Look and media previews use private temporary files, removed on dismissal or normal shutdown; an abnormal termination can leave files in the OS temporary directory. Text, image, Markdown and PDF previews stay in memory. HTML/SVG display as inert source, not web pages. |
+| **Settings menu cache** | Only installation-scoped navigation descriptors are persisted, never effective settings, credentials, instruction bodies or server source. Editing waits for a current server response. |
 | **Changes** | Configuration changes require review, destructive actions require confirmation, and uncertain writes are not replayed automatically. Server permissions still apply. |
 | **Channels** | The channel filter is remembered per installation. **Assistant client** does not mean this Mac. The app asks before replying here to an email or Telegram conversation. |
 | **Notifications** | Alerts require permission, omit message bodies, and stop when you quit the app. |

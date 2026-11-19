@@ -38,6 +38,8 @@ final class ClientModel {
     var chats: ConversationModel
     let reminderRuns: ConversationModel
     var skillsBrowser = SkillBrowserState()
+    private(set) var settingsMenu: FullConfiguration?
+    private var settingsMenuSource: JSONValue?
     let modelCatalog: OpenRouterCatalog
     private(set) var assistantName = String(localized: "Assistant")
     var newChatRequest = UUID()
@@ -128,6 +130,10 @@ final class ClientModel {
         } catch {
             self.error = String(localized: "Saved connection metadata could not be read: \(error.localizedDescription)")
         }
+        if let health {
+            do { try restoreSettingsMenu(instance: health.instanceID) }
+            catch { self.error = String(localized: "Saved settings menu could not be read: \(error.localizedDescription)") }
+        }
     }
 
     /// Saves an editable profile without API tokens, private keys, or conversation content.
@@ -164,10 +170,12 @@ final class ClientModel {
             catch { reminderRuns.error = String(localized: "Saved reminder history could not be read: \(error.localizedDescription)") }
             do { try restoreServices(instance: health.instanceID) }
             catch { servicesError = String(localized: "Saved service statuses could not be read: \(error.localizedDescription)") }
+            do { try restoreSettingsMenu(instance: health.instanceID) }
+            catch { self.error = String(localized: "Saved settings menu could not be read: \(error.localizedDescription)") }
             status = String(localized: "Connected")
             if health.capabilities.contains("configuration.structured") {
                 do {
-                    let catalog = try await cachedRead("configuration/catalog")
+                    let catalog = try await configurationCatalog()
                     guard generation == current else { return }
                     guard case .bool(let complete)? = catalog["setup_complete"] else { throw ClientError.malformedResponse }
                     setupRequired = !complete
@@ -209,6 +217,8 @@ final class ClientModel {
         api = nil
         invalidateResources(includingSkills: true)
         skillsBrowser = SkillBrowserState()
+        settingsMenu = nil
+        settingsMenuSource = nil
         health = nil
         clientID = nil
         messages = []
@@ -256,6 +266,35 @@ final class ClientModel {
     /// Session-only read caching coalesces navigation requests without storing credentials on disk.
     func cachedRead(_ resource: String, maxAge: TimeInterval = 60) async throws -> JSONValue {
         try await cachedResource(resource, maxAge: maxAge) { try await self.read(resource) }
+    }
+
+    /// Menus restore immediately; only live, revision-bound responses may initialize an editable form.
+    func configurationCatalog() async throws -> JSONValue {
+        guard let instance = health?.instanceID else { throw ClientError.unavailable }
+        let current = generation
+        let catalog = try await cachedRead("configuration/catalog")
+        guard current == generation, health?.instanceID == instance else { throw CancellationError() }
+        let snapshot = try SettingsMenuCache.snapshot(catalog)
+        if snapshot != settingsMenuSource {
+            let menu = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(snapshot))
+            try SettingsMenuCache.save(snapshot, instance: instance, defaults: defaults)
+            settingsMenuSource = snapshot
+            settingsMenu = menu
+        }
+        return catalog
+    }
+
+    func prefetchSettingsMenu() async {
+        guard health?.capabilities.contains("configuration.structured") == true else { return }
+        do { _ = try await configurationCatalog() }
+        catch { if let message = error.presentableMessage { self.error = message } }
+    }
+
+    private func restoreSettingsMenu(instance: String) throws {
+        settingsMenuSource = try SettingsMenuCache.read(instance: instance, defaults: defaults)
+        if let settingsMenuSource {
+            settingsMenu = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(settingsMenuSource))
+        } else { settingsMenu = nil }
     }
 
     /// Only side-effect-free skill discovery enters the session query cache.

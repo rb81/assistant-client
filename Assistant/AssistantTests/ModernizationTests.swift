@@ -64,6 +64,205 @@ final class ModernizationTests: XCTestCase {
     }
 
     @MainActor
+    func testNativeCopyButtonHitTargetAndActionCopyTheCompleteCurrentMessage() async throws {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        for appearance in [ColorScheme.light, .dark] {
+            for compact in [true, false] {
+                let source = "# A message\n\nFirst paragraph.\nSecond line.\n\n```swift\nlet ready = true\n```"
+                func content(_ text: String) -> some View {
+                    VStack(alignment: .leading) {
+                        HStack {
+                            Text("Assistant").textSelection(.enabled)
+                            Spacer()
+                            CopyTextButton(text: text, compact: compact, pasteboard: pasteboard)
+                        }
+                        Text(text).textSelection(.enabled)
+                    }.padding().environment(\.colorScheme, appearance)
+                }
+                let host = NSHostingView(rootView: content(source))
+                let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+                                      styleMask: [.titled], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.contentView = host
+                defer { window.close() }
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                let button = try XCTUnwrap(descendant(NativeCopyControl.CopyButton.self, in: host))
+                XCTAssertGreaterThanOrEqual(button.bounds.width, 28)
+                XCTAssertGreaterThanOrEqual(button.bounds.height, 28)
+                XCTAssertTrue(button.acceptsFirstMouse(for: nil))
+                for point in [NSPoint(x: button.bounds.midX, y: button.bounds.midY), NSPoint(x: 3, y: 3)] {
+                    let hit = host.hitTest(button.convert(point, to: host.superview))
+                    XCTAssertTrue(hit === button || hit?.isDescendant(of: button) == true,
+                                  "compact=\(compact), appearance=\(appearance), point=\(point), hit=\(String(describing: hit)), bounds=\(button.bounds), visible=\(button.visibleRect)")
+                }
+                button.performClick(nil)
+                XCTAssertEqual(pasteboard.string(forType: .string), source)
+                let updated = "A different user message\nwith its entire second line."
+                host.rootView = content(updated)
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(50))
+                try XCTUnwrap(descendant(NativeCopyControl.CopyButton.self, in: host)).performClick(nil)
+                XCTAssertEqual(pasteboard.string(forType: .string), updated, "Reused controls must copy the current message")
+            }
+        }
+    }
+
+    @MainActor
+    func testSettingsMenuPrefetchIsAtomicCoalescedPersistentAndContainsNoSavedValues() async throws {
+        let api = ChatAPI()
+        let suite = UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let model = ClientModel(defaults: defaults, api: api, health: health)
+        let catalog = try JSONDecoder().decode(JSONValue.self, from: Data("""
+        {"revision":"r1","setup_complete":true,"setup_notice":"private-notice","instructions":"private-instructions",
+         "agent_yaml":"private-source","credential_names":["private-key-name"],
+         "groups":[{"id":"email","title":"Email","basic":true,"destination":"connections"}],
+         "settings":[{"group":"email","key":"EMAIL_ACCOUNT","label":"Account","value":"private-saved-value",
+          "secret":true,"boolean":false,"editable":true,"default":"private-default",
+          "metadata":{"level":"basic","description":"private-description","default":"private-metadata-default"}}]}
+        """.utf8))
+        await api.setSettingsCatalog(catalog)
+        await api.pauseNextRead("configuration/catalog")
+        let first = Task { try await model.configurationCatalog() }
+        for _ in 0..<100 {
+            if await api.readIsPaused("configuration/catalog") { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let paused = await api.readIsPaused("configuration/catalog")
+        XCTAssertTrue(paused)
+        let second = Task { try await model.configurationCatalog() }
+        await Task.yield()
+        XCTAssertNil(model.settingsMenu, "No partial static menu should become ready during the catalog read")
+        await api.resumeRead("configuration/catalog")
+        _ = try await (first.value, second.value)
+        let resources = await api.resources
+        XCTAssertEqual(resources.filter { $0 == "configuration/catalog" }.count, 1)
+        let menu = try XCTUnwrap(model.settingsMenu)
+        XCTAssertEqual(SettingsNavigation(menu).pages(in: .connections).map(\.id), ["email"])
+        let stored = try XCTUnwrap(defaults.data(forKey: "assistant.settingsMenu.\(health.instanceID)"))
+        XCTAssertFalse(String(decoding: stored, as: UTF8.self).contains("private-"))
+        let restored = ClientModel(defaults: defaults, api: api, health: health)
+        XCTAssertEqual(restored.settingsMenu?.groups?.map(\.id), ["email"])
+        XCTAssertEqual(restored.settingsMenu?.settings.first?.value, "")
+        XCTAssertNil(restored.settingsMenu?.settings.first?.defaultValue)
+        let otherHealth = InstanceHealth(apiVersion: 2, instanceID: "different", name: "Other", capabilities: [], readOnly: false)
+        XCTAssertNil(ClientModel(defaults: defaults, api: api, health: otherHealth).settingsMenu)
+        model.configurationDirty = true
+        model.invalidateResources()
+        XCTAssertNotNil(model.settingsMenu)
+        var updated = try XCTUnwrap(catalog["groups"]?.array)
+        updated.append(.object(["id": .string("models"), "title": .string("Models"), "basic": .bool(true)]))
+        guard case .object(var object) = catalog else { return XCTFail("Expected object") }
+        object["groups"] = .array(updated)
+        object["settings"] = .array((catalog["settings"]?.array ?? []) + [.object([
+            "group": .string("models"), "key": .string("MODEL"), "label": .string("Model"), "value": .string(""),
+            "secret": .bool(false), "boolean": .bool(false), "editable": .bool(true)
+        ])])
+        await api.setSettingsCatalog(.object(object))
+        _ = try await model.configurationCatalog()
+        XCTAssertEqual(model.settingsMenu?.groups?.map(\.id), ["email", "models"])
+        XCTAssertEqual(SettingsNavigation(try XCTUnwrap(model.settingsMenu)).pages(in: .models).map(\.id), ["models"])
+        XCTAssertTrue(model.configurationDirty, "Menu refresh must not discard an active draft")
+        model.configurationDirty = false
+        await model.disconnect()
+        XCTAssertNil(model.settingsMenu)
+    }
+
+    @MainActor
+    func testNativeSplitViewRemembersAdjustedWidthAcrossRecreation() async throws {
+        let name = "AssistantTests.Split.\(UUID().uuidString)"
+        defer { UserDefaults.standard.removeObject(forKey: "NSSplitView Subview Frames \(name)") }
+        func makeWindow() -> (NSWindow, NSHostingView<some View>) {
+            let host = NSHostingView(rootView: HSplitView {
+                Color.clear.frame(minWidth: 220, idealWidth: 270, maxWidth: 380)
+                    .background(SplitViewAutosave(name: name, defaultLeadingWidth: 270))
+                Color.clear.frame(minWidth: 340)
+            })
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 400),
+                                  styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
+            return (window, host)
+        }
+        let (firstWindow, firstHost) = makeWindow()
+        defer { firstWindow.close() }
+        try await Task.sleep(for: .milliseconds(150))
+        let first = try XCTUnwrap(descendant(NSSplitView.self, in: firstHost))
+        XCTAssertEqual(first.autosaveName, name)
+        XCTAssertEqual(try XCTUnwrap(first.arrangedSubviews.first).frame.width, 270, accuracy: 2)
+        first.setPosition(330, ofDividerAt: 0)
+        try await Task.sleep(for: .milliseconds(150))
+        let width = try XCTUnwrap(first.arrangedSubviews.first).frame.width
+        XCTAssertEqual(width, 330, accuracy: 2)
+        firstWindow.close()
+        let (secondWindow, secondHost) = makeWindow()
+        defer { secondWindow.close() }
+        try await Task.sleep(for: .milliseconds(150))
+        let second = try XCTUnwrap(descendant(NSSplitView.self, in: secondHost))
+        XCTAssertEqual(second.autosaveName, name)
+        XCTAssertEqual(try XCTUnwrap(second.arrangedSubviews.first).frame.width, width, accuracy: 2)
+    }
+
+    func testToolDetailPreparationPreservesFullJSONAndReportsFormattingErrors() throws {
+        let value = JSONValue.object(["result": .array([.string("Line one\nLine two"), .bool(true)])])
+        let source = try XCTUnwrap(ChatJSON.Document.value(value).formatted())
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(source.utf8)), value)
+        XCTAssertThrowsError(try ChatJSON.Document.value(.number(.infinity)).formatted())
+    }
+
+    func testMenuRefreshKeepsLoadedValuesButNotObsoleteFieldPresentation() throws {
+        let data = Data("""
+        {"revision":"r1","setup_complete":true,"setup_notice":"","instructions":"",
+         "settings":[{"group":"email","key":"EMAIL_ACCOUNT","label":"Account","value":"",
+          "secret":false,"boolean":false,"editable":true,"metadata":{"level":"basic"}}]}
+        """.utf8)
+        var old = try Wire.decoder().decode(FullConfiguration.self, from: data)
+        old.settings[0].value = "saved@example.invalid"
+        var current = old
+        current.settings[0].value = ""
+        current.settings[0].metadata = .object(["level": .string("advanced"), "help": .string("Updated explanation")])
+        current.mergeLoadedValues(["EMAIL_ACCOUNT": old.settings[0]])
+        XCTAssertEqual(current.settings[0].value, "saved@example.invalid")
+        XCTAssertEqual(current.settings[0].metadata?["level"], .string("advanced"))
+        XCTAssertEqual(current.settings[0].help, "Updated explanation")
+    }
+
+    @MainActor
+    func testJSONDetailsShowLoadingAndUseABoundedSelectableViewport() async throws {
+        let value = JSONValue.array((0..<10_000).map { .object(["row": .integer(Int64($0))]) })
+        let host = NSHostingView(rootView: ChatJSON(value: value))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: 420),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        XCTAssertNotNil(descendant(NSProgressIndicator.self, in: host))
+        for _ in 0..<100 {
+            if descendant(NSTextView.self, in: host) != nil { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let text = try XCTUnwrap(descendant(NSTextView.self, in: host))
+        XCTAssertFalse(text.isEditable)
+        XCTAssertTrue(text.isSelectable)
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(text.string.utf8)), value)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(text.enclosingScrollView).bounds.height, 360)
+        let current = JSONValue.object(["current": .bool(true)])
+        host.rootView = ChatJSON(value: current)
+        host.layoutSubtreeIfNeeded()
+        for _ in 0..<100 {
+            if let text = descendant(NSTextView.self, in: host),
+               (try? JSONDecoder().decode(JSONValue.self, from: Data(text.string.utf8))) == current { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertEqual(try JSONDecoder().decode(JSONValue.self, from: Data(try XCTUnwrap(descendant(NSTextView.self, in: host)).string.utf8)), current)
+    }
+
+    @MainActor
     func testReminderReadStateSurvivesRelaunchWithoutOverwritingChatCache() async throws {
         let api = ChatAPI()
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
