@@ -226,6 +226,8 @@ struct SettingField: Decodable, Identifiable, Sendable {
     var section: String? { metadata?["section"]?.string }
     /// Allowed values when the server restricts a field to a fixed list.
     var choices: [String]? { (metadata?["choices"]?.array ?? metadata?["enum"]?.array)?.compactMap(\.string) }
+    /// Friendly display names never change the wire value sent back to the server.
+    func choiceLabel(_ value: String) -> String { metadata?["choice_labels"]?[value]?.string ?? value }
     /// Caution shown beside the field, or why it cannot be edited here.
     var warning: String? { metadata?["warning"]?.string ?? editRestriction }
     /// Readable default for the help popover; empty defaults are omitted.
@@ -250,6 +252,7 @@ struct SettingGroup: Decodable, Identifiable, Sendable, Hashable {
     var section: String?
     let basic: Bool
     var destination: String? = nil
+    var advancedTitle: String? = nil
 }
 
 /// Revision-bound settings and instructions used for preview/confirmed saves.

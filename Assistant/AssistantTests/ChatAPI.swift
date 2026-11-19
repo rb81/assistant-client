@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 @testable import Assistant
 
 /// Read/write chat fixtures capture request intent without real credentials or process launches.
@@ -15,6 +16,12 @@ actor ChatAPI: ManagementAPI {
     private var conversationRows: [Conversation]?
     private var assistantName = ""
     private var activationPending = false
+    private var serviceFailures: [ClientError] = []
+    private var workspaceFiles: [String: Data] = [:]
+    var queryPayloads: [JSONValue] = []
+
+    func failServices(_ failures: [ClientError]) { serviceFailures = failures }
+    func setWorkspaceFile(_ path: String, data: Data) { workspaceFiles[path] = data }
 
     func setAssistantName(_ name: String) { assistantName = name }
     func setActivationPending(_ pending: Bool) { activationPending = pending }
@@ -39,6 +46,7 @@ actor ChatAPI: ManagementAPI {
     /// Unknown fixture routes fail explicitly instead of fabricating successful empty data.
     func request(_ resource: String, body: JSONValue?, key: String?) async throws -> Data {
         resources.append(resource)
+        if resource == "query", let body { queryPayloads.append(body) }
         if let prefix = pausedReads.first(where: { resource.hasPrefix($0) }) {
             pausedReads.remove(prefix)
             await withCheckedContinuation { readWaiters[prefix] = $0 }
@@ -75,10 +83,23 @@ actor ChatAPI: ManagementAPI {
             """.utf8)
         }
         if resource == "services?details=true" {
+            if !serviceFailures.isEmpty { throw serviceFailures.removeFirst() }
             return Data(#"{"services":[{"id":"task-agent","title":"Task worker","state":"running","health":"healthy"}]}"#.utf8)
         }
         if resource == "query", body?["action"] == .string("skills.list") {
-            return Data(#"{"skills":[],"total":0}"#.utf8)
+            return Data(#"{"skills":[{"id":"CALENDAR","title":"Calendar","description":"Calendar guidance","revision":"r1","locked":true}],"total":1}"#.utf8)
+        }
+        if resource == "query", body?["action"] == .string("workspace.read"),
+           let path = body?["arguments"]?["path"]?.string, let data = workspaceFiles[path] {
+            let offset = Int(body?["arguments"]?["offset"]?.integer ?? 0)
+            let limit = Int(body?["arguments"]?["limit"]?.integer ?? 1_048_576)
+            guard offset >= 0, offset <= data.count, limit > 0 else { throw ClientError.invalidResource }
+            let end = min(data.count, offset + limit)
+            return try JSONEncoder().encode(JSONValue.object([
+                "content_base64": .string(data.subdata(in: offset..<end).base64EncodedString()),
+                "size_bytes": .integer(Int64(data.count)), "next_offset": .integer(Int64(end)),
+                "sha256": .string(SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+            ]))
         }
         if resource == "configuration/settings?group=identity" {
             return try JSONEncoder().encode(JSONValue.object(["settings": .array([

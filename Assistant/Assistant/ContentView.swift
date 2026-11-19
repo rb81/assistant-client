@@ -43,11 +43,11 @@ struct ContentView: View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 9) {
-                    Image(systemName: "point.3.connected.trianglepath.dotted").foregroundStyle(Theme.accent)
+                    Image(systemName: "point.3.connected.trianglepath.dotted").foregroundStyle(Theme.highlight)
                     Text("Assistant").font(.headline)
                 }.padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 28)
                 VStack(spacing: 6) {
-                    ForEach([Destination.inbox, .reminders, .services, .data]) { destination in
+                    ForEach([Destination.inbox, .reminders, .data, .services]) { destination in
                         Button { navigate(destination) } label: {
                             Label(destination.title, systemImage: destination.symbol)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -188,6 +188,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $model.activityPresented) { ActivityView(model: model) }
         .sheet(isPresented: $model.activationReviewPresented) { ApplySettingsView(model: model) }
+        .task(id: model.health?.instanceID) { await model.prefetchSkills() }
         .task(id: model.health?.instanceID) {
             guard model.health?.capabilities.contains("configuration.activation") == true else { return }
             while !Task.isCancelled {

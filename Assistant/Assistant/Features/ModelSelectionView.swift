@@ -29,7 +29,7 @@ struct ModelSelectionView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                     .background(Theme.background, in: RoundedRectangle(cornerRadius: 7))
-                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.outline))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.outline).allowsHitTesting(false))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Choose OpenRouter model")

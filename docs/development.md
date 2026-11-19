@@ -97,13 +97,17 @@ persist secret request bodies. See the
 
 Conversation drafts and API tokens stay in session memory. Loaded transcripts
 and tool details are cached in preferences per verified installation identity
-until **Clear conversation cache**. Attachments are memory-only unless downloaded, with a
-64 MiB per-file limit. Workspace uploads are scanner-gated and limited to 1 MiB.
+until **Clear conversation cache**. Downloads have a 64 MiB per-file limit.
+Workspace uploads are scanner-gated and limited to 1 MiB.
 Closing the client never stops services.
 
-Unread markers are local to this Mac and separate from delivery acknowledgments.
+Chat and reminder unread markers are local to this Mac, installation-scoped,
+persisted separately, and independent of delivery acknowledgments.
 Service inventories are cached per installation and refreshed every ten seconds
 while Connections is open; cached statuses are not proof of current health.
+Transient inventory failures get three read attempts (250/500 ms backoff)
+before a warning; authentication and validation failures are not retried.
+Writes are never automatically retried.
 Attachment downloads require the server to return a current SHA-256 digest,
 including for project files whose tracking metadata has no digest.
 
@@ -133,16 +137,21 @@ The server owns Basic/Advanced membership: credentials and ordinary connection
 setup are Basic; timeouts, polling intervals and other tuning are Advanced.
 Text-to-speech progressively reveals model/voice setup when enabled, using
 advertised cached voices when available without replacing an unsupported saved
-voice. Extra calendar accounts count saved credential completeness, never
-default calendar IDs or verified connectivity.
+voice. Model tools and speech share one budget page. Global OpenRouter ZDR and
+speech-specific ZDR merge into one `provider.zdr` flag. Calendar default choices
+include primary/numbered accounts with complete saved OAuth credentials,
+not default calendar IDs or verified connectivity. Choice labels are presentation
+only; for example, **Email & Telegram** still submits `both`.
 
 Settings stay mounted after first opening, including drafts when visiting other
 destinations. Disconnecting still requires saving or explicitly discarding a draft.
 Source-free reads and side-effect-free
-skill queries coalesce in flight and use a bounded, 60-second session cache;
+skill queries coalesce in flight. Ordinary reads use a bounded, 60-second session cache;
 reopening Settings rechecks expired catalog metadata without clearing drafts.
-Disconnects, explicit reloads, and relevant confirmed mutations invalidate the
-cache. Permission requests, update notices, and operation receipts live in the
+Skills prefetch at connection, retain browsing state, and cache pages/details for
+15 minutes in memory. Unrelated settings/inventory invalidations preserve that
+cache; explicit skill refreshes, skill mutations, and disconnects invalidate it.
+Permission requests, update notices, and operation receipts live in the
 global Activity sheet. Negotiate `operations.lookup` to recover missing receipts
 by their persisted submission key; missing/expired results never authorize replay.
 
@@ -156,10 +165,23 @@ Remote Markdown uses native text views: HTML/scripts and remote images are not
 executed or loaded. Diagnostics remain selectable technical details, not the
 primary interface.
 
+Data uses a split file browser and native preview pane: safe Markdown text,
+PDFKit, Quick Look for Office, and AVKit for contained audio/video files.
+Previews verify the complete bounded download before rendering: Markdown 2 MiB,
+PDF/Office 16 MiB, media 64 MiB. Unsupported formats/codecs have explicit errors
+and an independent Download action; playlists are not previewed. No autoplay.
+Selection changes, navigation, and normal shutdown stop playback and clear
+preview resources. Office/media files use unique OS temporary directories with
+0700 permissions and 0600 files; cleanup also covers cancelled/stale results.
+Abnormal process termination can leave these files for OS temporary-file cleanup.
+
 ## Design and assets
 
-Asset colors adapt the app icon's orange, amber, and warm neutrals to light and
-dark appearances. The UI uses the macOS system font, with system monospace for
+The palette comes from the icon's sampled sky blue (`#5D91B8`), amber glow
+(`#FAC373`), cream shell (`#DDB289`), and dark face (`#4C3930`).
+Blue controls and cool neutral surfaces keep the warm brand accents restrained.
+Light/dark text and control pairs meet at least 4.5:1 contrast.
+The UI uses the macOS system font, with system monospace for
 diagnostic output. The asset catalog's `AppIcon.appiconset` contains the
 1024-pixel icon master and the smaller macOS sizes derived from it.
 

@@ -9,12 +9,13 @@ enum FileDownloadSource {
 
 extension ClientModel {
     /// Reads bounded chunks and verifies the server digest before exposing any downloaded content.
-    func downloadFile(_ source: FileDownloadSource) async throws -> Data {
+    func downloadFile(_ source: FileDownloadSource, maximumBytes: Int64 = 64 * 1024 * 1024) async throws -> Data {
         var data = Data()
         var digest: String?
         var expectedSize: Int64?
         var position: Int64 = 0
         while true {
+            try Task.checkCancellation()
             let result: JSONValue
             switch source {
             case .workspace(let path):
@@ -31,8 +32,9 @@ extension ClientModel {
                   let hash = result["sha256"]?.string, next == position + Int64(chunk.count),
                   size >= 0, next <= size, digest == nil || digest == hash,
                   expectedSize == nil || expectedSize == size else { throw ClientError.malformedResponse }
-            guard size <= 64 * 1024 * 1024 else {
-                throw ClientError.operationFailed(String(localized: "Downloads are limited to 64 MiB in this client."))
+            guard size <= maximumBytes else {
+                let limit = ByteCountFormatter.string(fromByteCount: maximumBytes, countStyle: .binary)
+                throw ClientError.operationFailed(String(localized: "This file exceeds the \(limit) limit for this view."))
             }
             digest = hash
             expectedSize = size

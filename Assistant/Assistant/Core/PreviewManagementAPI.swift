@@ -188,9 +188,18 @@ actor PreviewManagementAPI: ManagementAPI {
                   let id = body?["arguments"]?["id"]?.string, ["EMAIL", "CALENDAR"].contains(id) {
             value = skill(email: id == "EMAIL", includeBody: true)
         } else if resource == "query", body?["action"] == .string("workspace.list") {
-            value = .object(["entries": .array([.object([
-                "path": .string("notes"), "is_dir": .bool(true), "size_bytes": .integer(0)
-            ])]), "total": .integer(1)])
+            value = .object(["entries": .array([
+                .object(["path": .string("notes"), "is_dir": .bool(true), "size_bytes": .integer(0)]),
+                .object(["path": .string("README.md"), "is_dir": .bool(false), "size_bytes": .integer(48)])
+            ]), "total": .integer(2)])
+        } else if resource == "query", body?["action"] == .string("workspace.read"),
+                  body?["arguments"]?["path"] == .string("README.md") {
+            let content = Data("# Workspace preview fixture\n\nA verified document.".utf8)
+            value = .object([
+                "content_base64": .string(content.base64EncodedString()),
+                "size_bytes": .integer(Int64(content.count)), "next_offset": .integer(Int64(content.count)),
+                "sha256": .string(SHA256.hash(data: content).map { String(format: "%02x", $0) }.joined())
+            ])
         } else if resource == "credentials" {
             value = .object(["credentials": .array([
                 .object(["name": .string("AGENT_LLM_OPENROUTER_API_KEY"), "status": .string("configured")])

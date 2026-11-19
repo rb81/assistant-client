@@ -176,11 +176,41 @@ final class AssistantUITests: XCTestCase {
         let thread = app.buttons["chat-thread-7"]
         XCTAssertTrue(thread.waitForExistence(timeout: 10))
         thread.click()
-        for id in ["request:client:1", "reply:client:2"] {
+        let expected = ["Help me plan the launch.",
+                        "# A thoughtful launch\nStart small, then learn.\n\n```swift\nlet ready = true\n```\n\n- Validate the essentials\n- Keep the feedback loop short"]
+        for (index, id) in ["request:client:1", "reply:client:2"].enumerated() {
             let copy = app.buttons["copy-message-\(id)"]
             XCTAssertTrue(copy.waitForExistence(timeout: 10))
             copy.click()
-            XCTAssertEqual(copy.label, "Copied")
+            let copied = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", "Copied"), object: copy)
+            guard XCTWaiter.wait(for: [copied], timeout: 5) == .completed else { XCTFail("Copy action did not run"); return }
+            let composer = app.textViews["Message Assistant"]
+            composer.click()
+            composer.typeKey("a", modifierFlags: .command)
+            composer.typeKey("v", modifierFlags: .command)
+            XCTAssertEqual(composer.value as? String, expected[index], "Copy must place the complete message on the pasteboard")
+        }
+    }
+
+    /// A workspace click previews in place and leaves an explicit download action available.
+    @MainActor
+    func testWorkspaceMarkdownPreviewInBothAppearances() {
+        for dark in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-fixture"] + (dark ? ["--ui-dark"] : [])
+            app.launch()
+            let data = app.buttons["nav-data"]
+            XCTAssertTrue(data.waitForExistence(timeout: 10))
+            data.click()
+            let file = app.buttons["workspace-file-README.md"]
+            XCTAssertTrue(file.waitForExistence(timeout: 10))
+            file.click()
+            XCTAssertTrue(app.otherElements["workspace-preview"].waitForExistence(timeout: 10))
+            let text = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "A verified document.")).firstMatch
+            XCTAssertTrue(text.waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["Download"].firstMatch.exists)
+            capture(app, name: dark ? "Workspace preview dark" : "Workspace preview light")
+            app.terminate()
         }
     }
 

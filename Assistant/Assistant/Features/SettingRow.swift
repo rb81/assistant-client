@@ -75,12 +75,21 @@ struct SettingRow: View {
                                multiple: field.key == "AGENT_FUSION_ANALYSIS_MODELS", value: $value)
         } else if let choices = choices ?? field.choices {
             Picker(field.label, selection: $value) {
-                // Keep an unexpected saved value selectable rather than silently replacing it.
+                // Preserve an unavailable saved value without letting it become a new selection.
                 ForEach(choices.contains(value) ? choices : [value] + choices, id: \.self) { choice in
-                    Text(choice.isEmpty ? String(localized: "Not set") : choice).tag(choice)
+                    Text(choice.isEmpty ? String(localized: "Not set") : field.choiceLabel(choice)).tag(choice)
+                        .disabled(!choices.contains(choice))
                 }
             }
+            .disabled(choices.isEmpty)
             .labelsHidden().frame(maxWidth: Self.pickerWidth, alignment: .leading)
+            if choices.isEmpty {
+                Text("No configured choices are available. Complete and save the related setup first.")
+                    .font(.caption).foregroundStyle(Theme.secondary)
+            } else if !choices.contains(value), !value.isEmpty {
+                Text("The saved choice is unavailable. Select a configured option before saving this setting.")
+                    .font(.caption).foregroundStyle(.orange)
+            }
         } else {
             TextField(field.label, text: $value, prompt: field.defaultText.map { Text($0) })
                 .textFieldStyle(.roundedBorder)

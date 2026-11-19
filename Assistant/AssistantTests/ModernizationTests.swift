@@ -41,11 +41,104 @@ final class ModernizationTests: XCTestCase {
         model.invalidateResources()
         _ = try await model.cachedSkillQuery(query)
         resources = await api.resources
+        XCTAssertEqual(resources.filter { $0 == "query" }.count, 1)
+        model.invalidateResources(includingSkills: true)
+        _ = try await model.cachedSkillQuery(query)
+        resources = await api.resources
         XCTAssertEqual(resources.filter { $0 == "query" }.count, 2)
         do {
             _ = try await model.cachedSkillQuery(.object(["action": .string("skills.delete")]))
             XCTFail("Mutation must never enter the read cache")
         } catch { XCTAssertTrue(error is ClientError) }
+    }
+
+    @MainActor
+    func testCopyPreservesWholeMessageSourceOnNativePasteboard() {
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let text = "# A reply\n\nFirst **paragraph**.\nSecond line: مرحباً 👋\n\n```swift\nlet ready = true\n```\n\n- Last item"
+        XCTAssertTrue(MessageClipboard.copy(text, to: pasteboard))
+        XCTAssertEqual(pasteboard.string(forType: .string), text)
+        XCTAssertTrue(MessageClipboard.copy("A user message\nwith two lines", to: pasteboard))
+        XCTAssertEqual(pasteboard.string(forType: .string), "A user message\nwith two lines")
+    }
+
+    @MainActor
+    func testReminderReadStateSurvivesRelaunchWithoutOverwritingChatCache() async throws {
+        let api = ChatAPI()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let model = ClientModel(defaults: defaults, api: api, health: health)
+        let reminder = Conversation(threadID: "reminder:daily:7", channel: "reminder", messageCount: 2,
+                                    openingMessage: "Daily briefing", lastActivityAt: "2026-11-19T10:00:00Z",
+                                    latestTaskID: 7, latestTaskStatus: "completed", latestTaskSummary: "Briefing",
+                                    workstreamTitle: nil)
+        await api.setConversations([reminder])
+        try await model.reminderRuns.loadConversations(model)
+        model.reminderRuns.setRead(true, conversation: reminder)
+        await api.setConversations([])
+        try await model.chats.loadConversations(model)
+        let restored = ClientModel(defaults: defaults, api: api, health: health)
+        XCTAssertEqual(restored.reminderRuns.conversations, [reminder])
+        XCTAssertFalse(restored.reminderRuns.isUnread(reminder))
+        XCTAssertTrue(restored.chats.conversations.isEmpty)
+        restored.reminderRuns.setRead(false, conversation: reminder)
+        let unread = ClientModel(defaults: defaults, api: api, health: health)
+        XCTAssertTrue(unread.reminderRuns.isUnread(reminder))
+        let anotherHealth = InstanceHealth(apiVersion: 2, instanceID: "another", name: "Assistant",
+                                           capabilities: [], readOnly: false)
+        let another = ClientModel(defaults: defaults, api: api, health: anotherHealth)
+        XCTAssertTrue(another.reminderRuns.conversations.isEmpty)
+        XCTAssertTrue(another.reminderRuns.isUnread(reminder))
+    }
+
+    @MainActor
+    func testSkillsPrefetchSharesBrowserCacheAndRetainsNavigationState() async throws {
+        let api = ChatAPI()
+        let health = InstanceHealth(apiVersion: 2, instanceID: "skills", name: "Assistant",
+                                    capabilities: ["skills.manage", "skills.preferences"], readOnly: false)
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: health)
+        await model.prefetchSkills()
+        XCTAssertEqual(model.skillsBrowser.entries.map(\.id), ["CALENDAR"])
+        model.skillsBrowser.selected = model.skillsBrowser.entries.first
+        _ = SkillsSettingsView(model: model)
+        model.invalidateResources()
+        _ = try await model.cachedSkillQuery(SkillPage.query(search: "", offset: 0, preferences: true))
+        var queries = await api.queryPayloads
+        XCTAssertEqual(queries.count, 1)
+        XCTAssertEqual(queries.first?["arguments"]?["limit"], .integer(20))
+        XCTAssertEqual(model.skillsBrowser.selected?.id, "CALENDAR")
+        model.invalidateResources(includingSkills: true)
+        await model.prefetchSkills()
+        queries = await api.queryPayloads
+        XCTAssertEqual(queries.count, 2)
+        await model.disconnect()
+        XCTAssertTrue(model.skillsBrowser.entries.isEmpty)
+        XCTAssertNil(model.skillsBrowser.selected)
+    }
+
+    @MainActor
+    func testConnectionInventoryRetriesTransientReadsAndRetainsLastGoodSnapshot() async throws {
+        let api = ChatAPI()
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: health)
+        await api.failServices([.http(503), .http(502)])
+        await model.refreshServices()
+        var resources = await api.resources
+        XCTAssertEqual(resources.count, 3)
+        XCTAssertNil(model.servicesError)
+        let lastGood = model.services
+        XCTAssertFalse(lastGood.isEmpty)
+        await api.failServices([.http(503), .http(503), .http(503)])
+        await model.refreshServices()
+        resources = await api.resources
+        XCTAssertEqual(resources.count, 6)
+        XCTAssertNotNil(model.servicesError)
+        XCTAssertEqual(model.services, lastGood)
+        await api.failServices([.http(401)])
+        await model.refreshServices()
+        resources = await api.resources
+        XCTAssertEqual(resources.count, 7, "Authentication failures must not be retried")
     }
 
     @MainActor

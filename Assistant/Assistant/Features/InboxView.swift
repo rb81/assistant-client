@@ -406,7 +406,7 @@ struct InboxView: View {
         .background(message.incoming ? Theme.panel : Theme.panel.opacity(0.4),
                     in: RoundedRectangle(cornerRadius: Theme.radius))
         .overlay(RoundedRectangle(cornerRadius: Theme.radius)
-            .stroke(external ? Color.orange.opacity(0.5) : Theme.secondary.opacity(0.18)))
+            .stroke(external ? Theme.highlight.opacity(0.5) : Theme.outline).allowsHitTesting(false))
     }
 
     /// Local date and time for a server timestamp, falling back to the raw value.

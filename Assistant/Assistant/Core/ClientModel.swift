@@ -37,6 +37,7 @@ final class ClientModel {
     var configurationDirty = false
     var chats: ConversationModel
     let reminderRuns: ConversationModel
+    var skillsBrowser = SkillBrowserState()
     let modelCatalog: OpenRouterCatalog
     private(set) var assistantName = String(localized: "Assistant")
     var newChatRequest = UUID()
@@ -57,6 +58,7 @@ final class ClientModel {
     private var resourceCache: [String: (Date, JSONValue)] = [:]
     private var resourceReads: [String: Task<JSONValue, Error>] = [:]
     private var cacheGeneration = UUID()
+    private var skillGeneration = UUID()
     private(set) var services: [JSONValue] = []
     private(set) var servicesUpdatedAt: Date?
     private(set) var servicesLoading = false
@@ -112,6 +114,7 @@ final class ClientModel {
             }
             if let first = profiles.first { profile = first }
             if let health { try chats.restoreCache(instance: health.instanceID) }
+            if let health { try reminderRuns.restoreCache(instance: health.instanceID) }
             if let health { try restoreServices(instance: health.instanceID) }
             if let health {
                 activationState = ActivationState(rawValue: defaults.string(forKey: "assistant.activation.\(health.instanceID)") ?? "") ?? .active
@@ -157,6 +160,8 @@ final class ClientModel {
             try saveProfile()
             do { try chats.restoreCache(instance: health.instanceID) }
             catch { chats.error = String(localized: "Saved conversations could not be read: \(error.localizedDescription)") }
+            do { try reminderRuns.restoreCache(instance: health.instanceID) }
+            catch { reminderRuns.error = String(localized: "Saved reminder history could not be read: \(error.localizedDescription)") }
             do { try restoreServices(instance: health.instanceID) }
             catch { servicesError = String(localized: "Saved service statuses could not be read: \(error.localizedDescription)") }
             status = String(localized: "Connected")
@@ -202,7 +207,8 @@ final class ClientModel {
         eventCursor = nil
         liveUpdates = false; liveUpdateError = nil
         api = nil
-        invalidateResources()
+        invalidateResources(includingSkills: true)
+        skillsBrowser = SkillBrowserState()
         health = nil
         clientID = nil
         messages = []
@@ -258,23 +264,46 @@ final class ClientModel {
             throw ClientError.invalidResource
         }
         let key = "query:" + (try payload.formatted())
-        return try await cachedResource(key, maxAge: 60) { try await self.query("query", payload: payload) }
+        return try await cachedResource(key, maxAge: 15 * 60) { try await self.query("query", payload: payload) }
+    }
+
+    /// Fetch the first page before Settings opens; details and later pages still load on demand.
+    func prefetchSkills() async {
+        guard health?.capabilities.contains("skills.manage") == true else { return }
+        let browser = skillsBrowser
+        do {
+            let value = try await cachedSkillQuery(SkillPage.query(
+                search: "", offset: 0, preferences: health?.capabilities.contains("skills.preferences") == true))
+            let page = try Wire.decoder().decode(SkillPage.self, from: JSONEncoder().encode(value))
+            guard browser === skillsBrowser else { return }
+            if skillsBrowser.search.isEmpty && skillsBrowser.offset == 0 {
+                skillsBrowser.entries = page.skills
+                skillsBrowser.total = page.total
+                skillsBrowser.error = nil
+            }
+        } catch {
+            if browser === skillsBrowser, let message = error.presentableMessage { browser.error = message }
+        }
+    }
+
+    private func cacheVersion(_ key: String) -> UUID {
+        key.hasPrefix("query:") ? skillGeneration : cacheGeneration
     }
 
     private func cachedResource(_ key: String, maxAge: TimeInterval,
                                 load: @escaping @MainActor () async throws -> JSONValue) async throws -> JSONValue {
-        let current = cacheGeneration
+        let current = cacheVersion(key)
         if let (date, value) = resourceCache[key], Date().timeIntervalSince(date) < maxAge { return value }
         if let task = resourceReads[key] {
             let value = try await task.value
-            guard current == cacheGeneration else { throw CancellationError() }
+            guard current == cacheVersion(key) else { throw CancellationError() }
             return value
         }
         let task = Task { try await load() }
         resourceReads[key] = task
-        defer { if current == cacheGeneration { resourceReads[key] = nil } }
+        defer { if current == cacheVersion(key) { resourceReads[key] = nil } }
         let value = try await task.value
-        guard current == cacheGeneration else { throw CancellationError() }
+        guard current == cacheVersion(key) else { throw CancellationError() }
         if resourceCache.count >= 128, let oldest = resourceCache.min(by: { $0.value.0 < $1.value.0 })?.key {
             resourceCache.removeValue(forKey: oldest)
         }
@@ -298,11 +327,12 @@ final class ClientModel {
     }
 
     /// Explicit reloads and mutations invalidate all dependent settings and inventory snapshots.
-    func invalidateResources() {
+    func invalidateResources(includingSkills: Bool = false) {
         cacheGeneration = UUID()
-        for task in resourceReads.values { task.cancel() }
-        resourceReads = [:]
-        resourceCache = [:]
+        if includingSkills { skillGeneration = UUID() }
+        for (key, task) in resourceReads where includingSkills || !key.hasPrefix("query:") { task.cancel() }
+        resourceReads = resourceReads.filter { !includingSkills && $0.key.hasPrefix("query:") }
+        resourceCache = resourceCache.filter { !includingSkills && $0.key.hasPrefix("query:") }
     }
 
     /// Keeps the last successful inventory visible while checking current health.
@@ -312,7 +342,7 @@ final class ClientModel {
         servicesLoading = true
         defer { if current == generation { servicesLoading = false } }
         do {
-            let result = try await read("services?details=true")
+            let result = try await readWithRetry("services?details=true")
             guard current == generation else { return }
             guard let rows = result["services"]?.array else { throw ClientError.malformedResponse }
             let updatedAt = Date()
@@ -423,7 +453,7 @@ final class ClientModel {
             )
         }
         if action.hasPrefix("configuration.") || action.hasPrefix("credential") || action == "domain.mutate" {
-            invalidateResources()
+            invalidateResources(includingSkills: payload["action"]?.string?.hasPrefix("skills.") == true)
         }
         if action == "service.lifecycle", payload["service"] == nil,
            ["start", "apply"].contains(payload["action"]?.string ?? "") {
@@ -548,9 +578,7 @@ final class ClientModel {
             } catch {
                 guard generation == current, !Task.isCancelled else { return }
                 failures += 1
-                let busy = (error as? ClientError)?.httpStatus == 503
-                // A busy executor is expected under load; only persistent trouble is worth showing.
-                if !busy || failures > 3 { pollingError = error.presentableMessage }
+                if !ReadRetryPolicy.isTransient(error) || failures >= 3 { pollingError = error.presentableMessage }
                 let authenticationExpired = (error as? ClientError)?.httpStatus == 401
                 let reconnect = ((error as? URLError).map { $0.code != .cancelled } ?? false) || authenticationExpired
                 if reconnect {
@@ -562,7 +590,7 @@ final class ClientModel {
                         api = replacement
                         startEvents(generation: current)
                     } catch {
-                        pollingError = error.presentableMessage
+                        if failures >= 3 { pollingError = error.presentableMessage }
                     }
                 }
                 let delay = min(30, pow(2, Double(min(failures, 5)))) + Double.random(in: 0...1)

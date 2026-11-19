@@ -17,7 +17,7 @@ struct ToolRunView: View {
         }
         .padding(14)
         .background(Theme.panel.opacity(0.65), in: RoundedRectangle(cornerRadius: Theme.radius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.secondary.opacity(0.15)))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radius).stroke(Theme.secondary.opacity(0.15)).allowsHitTesting(false))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Tool calls")
     }

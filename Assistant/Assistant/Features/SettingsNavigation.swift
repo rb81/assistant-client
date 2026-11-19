@@ -63,6 +63,10 @@ struct SettingsNavigation {
     }
 
     func group(_ id: String) -> SettingGroup? { groups.first { $0.id == id } }
+    /// Tuning pages are named for their task rather than inheriting an unrelated setup heading.
+    func title(_ group: SettingGroup, in category: SettingsCategory) -> String {
+        category == .advanced ? group.advancedTitle ?? group.title : group.title
+    }
 
     /// Server-owned grouping keeps future fields discoverable without another client taxonomy.
     func pages(in category: SettingsCategory) -> [SettingGroup] {

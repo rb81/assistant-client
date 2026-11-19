@@ -120,7 +120,7 @@ struct CodeBlock: View {
         }
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.secondary.opacity(0.15)))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.secondary.opacity(0.15)).allowsHitTesting(false))
     }
 }
 
@@ -134,17 +134,17 @@ struct CopyTextButton: View {
 
     var body: some View {
         Button {
-            NSPasteboard.general.clearContents()
-            copied = NSPasteboard.general.setString(text, forType: .string)
+            copied = MessageClipboard.copy(text)
             copyFailed = !copied
         } label: {
             if compact {
                 Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .frame(width: 28, height: 28).contentShape(Rectangle())
             } else {
                 Label(copied ? String(localized: "Copied") : label, systemImage: copied ? "checkmark" : "doc.on.doc")
             }
         }
-        .buttonStyle(.borderless).font(.caption)
+        .buttonStyle(.plain).font(.caption).textSelection(.disabled)
         .accessibilityLabel(copied ? String(localized: "Copied") : label)
         .help(label)
         .onChange(of: text) { copied = false }

@@ -206,7 +206,10 @@ struct AppPreferencesView: View {
             }
         }
         .confirmationDialog("Clear cached conversations from this Mac?", isPresented: $confirmingClear) {
-            Button("Clear local cache", role: .destructive) { model.chats.clearSavedCache() }
+            Button("Clear local cache", role: .destructive) {
+                model.chats.clearSavedCache()
+                model.reminderRuns.clearSavedCache()
+            }
             Button("Cancel", role: .cancel) {}
         }
     }

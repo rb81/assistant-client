@@ -4,6 +4,7 @@ import SwiftUI
 struct ConfigurationView: View {
     let model: ClientModel
     @State private var configuration: FullConfiguration?
+    @State private var catalogSnapshot: JSONValue?
     @State private var credentials: [SavedCredential] = []
     @State private var credentialStatusLoaded = false
     @State private var credentialError: String?
@@ -86,7 +87,8 @@ struct ConfigurationView: View {
                             sectionButton(String(localized: "On this Mac"), page: .app, in: scope, identifier: "app")
                         }
                         ForEach(groups) { group in
-                            sectionButton(group.title, page: .group(group.id), in: scope, identifier: group.id)
+                            sectionButton(navigation?.title(group, in: scope) ?? group.title,
+                                          page: .group(group.id), in: scope, identifier: group.id)
                         }
                         if scope == .assistant {
                             sectionButton(String(localized: "Instructions"), page: .instructions, in: scope, identifier: "instructions")
@@ -128,7 +130,7 @@ struct ConfigurationView: View {
                 .foregroundStyle(Theme.secondary)
                 .padding(.horizontal, 9).padding(.vertical, 6)
                 .background(Theme.panel, in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.outline))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.outline).allowsHitTesting(false))
                 .frame(maxWidth: 230)
                 Button("Reload", systemImage: "arrow.clockwise") {
                     model.invalidateResources()
@@ -253,7 +255,7 @@ struct ConfigurationView: View {
     /// A page introduces its group, lists its fields by section, then any nested groups.
     @ViewBuilder private func groupPage(_ id: String) -> some View {
         if let navigation, let group = navigation.group(id) {
-            pageIntro(group.title, help: group.help)
+            pageIntro(navigation.title(group, in: category), help: group.help)
             if category == .connections {
                 Label("These are connection settings, not a verified connection. Saving without applying does not start message processing.",
                       systemImage: "info.circle")
@@ -461,7 +463,7 @@ struct ConfigurationView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline).allowsHitTesting(false))
             if let preview {
                 ScrollView { changeReview(preview) }.frame(maxHeight: 150)
             }
@@ -483,12 +485,12 @@ struct ConfigurationView: View {
 
     // MARK: - Draft
 
-    /// Reopening Settings keeps its contents visible; only a changed server revision needs a reload.
+    /// Catalog metadata can change after a server update even when saved values have not.
     private func checkForExternalChanges() async {
-        guard let configuration, !busy else { return }
+        guard configuration != nil, !busy else { return }
         do {
             let latest = try await model.cachedRead("configuration/catalog")
-            guard latest["revision"]?.string != configuration.revision else { return }
+            guard latest != catalogSnapshot else { return }
             guard !model.configurationDirty else {
                 error = String(localized: "Settings changed on the server. Your draft is preserved; discard it and reload before saving.")
                 return
@@ -533,6 +535,7 @@ struct ConfigurationView: View {
             if let catalog { result = catalog }
             else { result = try await model.cachedRead("configuration/catalog") }
             configuration = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(result))
+            catalogSnapshot = result
             model.setupRequired = configuration?.setupComplete == false
             if model.setupRequired, values.isEmpty, let first = navigation?.pages(in: .models).first {
                 category = .models; page = .group(first.id)

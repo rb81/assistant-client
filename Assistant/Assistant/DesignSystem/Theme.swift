@@ -8,6 +8,7 @@ enum Theme {
     static let ink = Color("Ink")
     static let secondary = Color("Muted")
     static let accent = Color.accentColor
+    static let highlight = Color("Ember")
     static let outline = secondary.opacity(0.18)
     static let pageTitle: Font = .largeTitle.weight(.semibold)
     static let sectionTitle: Font = .title2.weight(.semibold)
@@ -132,7 +133,7 @@ struct ManagementPanel<Content: View>: View {
             .padding(Theme.spacing)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline).allowsHitTesting(false))
     }
 }
 

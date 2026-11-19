@@ -1,4 +1,31 @@
 import SwiftUI
+import Observation
+
+/// Session-owned browsing survives navigation without persisting skill bodies to disk.
+@MainActor @Observable
+final class SkillBrowserState {
+    var entries: [SkillEntry] = []
+    var selected: SkillEntry?
+    var search = ""
+    var offset = 0
+    var total = 0
+    var error: String?
+}
+
+/// Shared request shape makes startup prefetch and the browser reuse the same cache entry.
+struct SkillPage: Decodable {
+    static let size = 20
+    let skills: [SkillEntry]
+    let total: Int
+
+    static func query(search: String, offset: Int, preferences: Bool) -> JSONValue {
+        var arguments: [String: JSONValue] = [
+            "query": .string(search), "offset": .integer(Int64(offset)), "limit": .integer(Int64(size))
+        ]
+        if preferences { arguments["include_overlays"] = .bool(false) }
+        return .object(["action": .string("skills.list"), "arguments": .object(arguments)])
+    }
+}
 
 /// A versioned skill catalog entry; instruction bodies are fetched only on open.
 struct SkillEntry: Decodable, Identifiable {
@@ -35,24 +62,26 @@ struct SkillPreference: Decodable {
 
 /// Settings for inspecting locked workflows and managing versioned custom guidance.
 struct SkillsSettingsView: View {
-    private static let pageSize = 20
+    private static let pageSize = SkillPage.size
     let model: ClientModel
-    @State private var entries: [SkillEntry] = []
-    @State private var selected: SkillEntry?
-    @State private var search = ""
-    @State private var offset = 0
-    @State private var total = 0
-    @State private var error: String?
+    @Bindable private var browser: SkillBrowserState
     @State private var loading = false
     @State private var busy = false
     @State private var editor: SkillDraft?
     @State private var pendingDeletion: Deletion?
     @State private var deleting = false
 
-    private struct Page: Decodable {
-        let skills: [SkillEntry]
-        let total: Int
+    init(model: ClientModel) {
+        self.model = model
+        self.browser = model.skillsBrowser
     }
+
+    private var entries: [SkillEntry] { get { browser.entries } nonmutating set { browser.entries = newValue } }
+    private var selected: SkillEntry? { get { browser.selected } nonmutating set { browser.selected = newValue } }
+    private var search: String { browser.search }
+    private var offset: Int { get { browser.offset } nonmutating set { browser.offset = newValue } }
+    private var total: Int { get { browser.total } nonmutating set { browser.total = newValue } }
+    private var error: String? { get { browser.error } nonmutating set { browser.error = newValue } }
 
     private struct Deletion {
         let payload: JSONValue
@@ -132,11 +161,11 @@ struct SkillsSettingsView: View {
         ManagementPanel {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    TextField("Search skills", text: $search)
+                    TextField("Search skills", text: $browser.search)
                         .accessibilityIdentifier("skills-search")
                     StableProgress(active: loading)
                     Button("Refresh", systemImage: "arrow.clockwise") {
-                        model.invalidateResources()
+                        model.invalidateResources(includingSkills: true)
                         Task { await load(searchPage) }
                     }
                     Button("Add skill", systemImage: "plus") { editor = SkillDraft() }
@@ -225,11 +254,9 @@ struct SkillsSettingsView: View {
         loading = true
         defer { if !Task.isCancelled && request == searchPage { loading = false } }
         do {
-            var arguments: [String: JSONValue] = [
-                "query": .string(request.query), "offset": .integer(Int64(request.offset)), "limit": .integer(Int64(Self.pageSize))
-            ]
-            if attachedPreferences { arguments["include_overlays"] = .bool(false) }
-            let page = try await fetch("list", arguments, as: Page.self)
+            let value = try await model.cachedSkillQuery(
+                SkillPage.query(search: request.query, offset: request.offset, preferences: attachedPreferences))
+            let page = try Wire.decoder().decode(SkillPage.self, from: JSONEncoder().encode(value))
             guard !Task.isCancelled, request == searchPage else { return }
             if request.offset > 0 && request.offset >= page.total {
                 offset = max(0, ((page.total - 1) / Self.pageSize) * Self.pageSize)
@@ -338,7 +365,7 @@ private struct SkillEditor: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radius))
-                .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline))
+                .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline).allowsHitTesting(false))
             HStack {
                 StableProgress(active: saving)
                 Spacer()

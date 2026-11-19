@@ -308,7 +308,7 @@ final class ConversationModel {
 
     /// Reconnect and relaunch restore transcripts only after the server identity has been verified.
     func restoreCache(instance: String) throws {
-        let key = "assistant.chatCache.\(instance)"
+        let key = "assistant.chatCache.\(instance)" + (reminderHistory ? ".reminders" : "")
         guard cacheKey != key else { return }
         clear()
         cacheKey = key
@@ -318,7 +318,7 @@ final class ConversationModel {
         let saved = try JSONDecoder().decode(ConversationCache.self, from: data)
         cache = saved.transcripts
         readVersions = saved.readVersions ?? [:]
-        conversations = (saved.scope ?? "") == channel ? saved.conversations.filter { !$0.scheduled } : []
+        conversations = (saved.scope ?? "") == channel ? saved.conversations.filter { $0.scheduled == reminderHistory } : []
         savedConversations = Dictionary(uniqueKeysWithValues: conversations.map { ($0.threadID, $0) })
         totalConversations = conversations.count
     }

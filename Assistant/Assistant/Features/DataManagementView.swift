@@ -19,6 +19,9 @@ struct DataManagementView: View {
     @State private var hasLoaded = false
     @State private var loadedPath: String?
     @State private var loadedOffset = 0
+    @State private var selectedFile: String?
+    @State private var preview = WorkspacePreview()
+    @State private var previewRequest = UUID()
 
     private var showingRequestedPage: Bool { loadedPath == path && loadedOffset == offset }
 
@@ -54,19 +57,24 @@ struct DataManagementView: View {
                         Text(path).font(.callout.monospaced()).textSelection(.enabled).lineLimit(1)
                     }
                     Divider()
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            if showingRequestedPage {
-                                ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in fileRow(entry) }
-                            }
-                        }.frame(maxWidth: .infinity)
-                    }
-                    .frame(minHeight: 180, maxHeight: .infinity)
-                    .overlay {
-                        if (!showingRequestedPage || entries.isEmpty) && (hasLoaded || error != nil) && !busy {
-                            Text(error != nil ? "Workspace could not be loaded." : "This folder is empty.")
-                                .foregroundStyle(Theme.secondary)
+                    HSplitView {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                if showingRequestedPage {
+                                    ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in fileRow(entry) }
+                                }
+                            }.frame(maxWidth: .infinity)
                         }
+                        .frame(minWidth: 320, idealWidth: 350, maxWidth: 420)
+                        .frame(minHeight: 180, maxHeight: .infinity)
+                        .overlay {
+                            if (!showingRequestedPage || entries.isEmpty) && (hasLoaded || error != nil) && !busy {
+                                Text(error != nil ? "Workspace could not be loaded." : "This folder is empty.")
+                                    .foregroundStyle(Theme.secondary)
+                            }
+                        }
+                        WorkspacePreviewView(preview: preview, path: selectedFile) { previewRequest = UUID() }
+                            .frame(minWidth: 320).padding(.leading, 14)
                     }
                     Divider()
                     HStack {
@@ -95,6 +103,14 @@ struct DataManagementView: View {
         }
         .frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .disabled(busy).task { await load() }
+        .task(id: PreviewSelection(path: selectedFile, request: previewRequest)) {
+            if let selectedFile { await preview.load(selectedFile, model: model) }
+            else { preview.clear() }
+        }
+        .onChange(of: path) { selectedFile = nil }
+        .onChange(of: offset) { selectedFile = nil }
+        .onDisappear { preview.clear() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in preview.clear() }
         .sheet(item: $pending) { mutation in
             MutationReview(mutation: mutation) {
                 busy = true
@@ -127,6 +143,7 @@ struct DataManagementView: View {
             guard path == requestedPath, offset == requestedOffset else { return }
             self.entries = entries; self.total = Int(total); hasLoaded = true; error = nil
             loadedPath = requestedPath; loadedOffset = requestedOffset
+            if let selectedFile, !entries.contains(where: { $0["path"]?.string == selectedFile }) { self.selectedFile = nil }
         } catch { self.error = error.presentableMessage ?? self.error }
     }
 
@@ -137,8 +154,9 @@ struct DataManagementView: View {
             Image(systemName: directory ? "folder.fill" : "doc").foregroundStyle(directory ? Theme.accent : Theme.secondary)
             Button((name as NSString).lastPathComponent) {
                 if directory { path = name; offset = 0; Task { await load() } }
-                else { Task { await download(name) } }
-            }.buttonStyle(.plain)
+                else { selectedFile = name }
+            }.buttonStyle(.plain).foregroundStyle(selectedFile == name ? Theme.accent : Theme.ink)
+                .accessibilityIdentifier("workspace-file-\(name)")
             Spacer()
             if let size = entry["size_bytes"]?.integer, !directory {
                 Text(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)).font(.caption).foregroundStyle(Theme.secondary)
@@ -150,6 +168,14 @@ struct DataManagementView: View {
                 mutate("workspace.delete", arguments: ["path": .string(name)], title: String(localized: "Delete \(name)"))
             } label: { Image(systemName: "trash") }.accessibilityLabel("Delete \(name)")
         }.padding(.vertical, 7)
+            .padding(.horizontal, 6)
+            .background(Theme.accent.opacity(selectedFile == name ? 0.1 : 0), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    /// Explicit refresh can reload the same selected file without changing its identity.
+    private struct PreviewSelection: Equatable {
+        let path: String?
+        let request: UUID
     }
 
     private func validName(_ name: String) -> Bool {

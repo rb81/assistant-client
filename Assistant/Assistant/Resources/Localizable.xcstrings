@@ -433,9 +433,6 @@
     "Downloaded %@." : {
 
     },
-    "Downloads are limited to 64 MiB in this client." : {
-
-    },
     "Earlier tool calls in this conversation are not shown." : {
 
     },
@@ -461,6 +458,9 @@
 
     },
     "File operation completed." : {
+
+    },
+    "File preview" : {
 
     },
     "Find a setting" : {
@@ -559,6 +559,9 @@
     "Loading models…" : {
 
     },
+    "Loading verified preview…" : {
+
+    },
     "Locked" : {
 
     },
@@ -635,6 +638,9 @@
 
     },
     "No" : {
+
+    },
+    "No configured choices are available. Complete and save the related setup first." : {
 
     },
     "No conversations match." : {
@@ -718,6 +724,9 @@
     "OK" : {
 
     },
+    "Office previews use macOS Quick Look. Availability depends on installed preview support." : {
+
+    },
     "On this Mac" : {
 
     },
@@ -788,6 +797,12 @@
     "Preview" : {
 
     },
+    "Preview Markdown, PDF and Office documents, or play audio and video." : {
+
+    },
+    "Preview is not available for this file type. Download it to open it in another app." : {
+
+    },
     "Previous" : {
 
     },
@@ -804,6 +819,9 @@
 
     },
     "Publish this skill revision?" : {
+
+    },
+    "Quick Look is unavailable. Download this document to open it." : {
 
     },
     "Quit Assistant" : {
@@ -909,6 +927,9 @@
 
     },
     "Retry loading workspace" : {
+
+    },
+    "Retry preview" : {
 
     },
     "Review" : {
@@ -1025,6 +1046,9 @@
     "Saved key status unavailable" : {
 
     },
+    "Saved reminder history could not be read: %@" : {
+
+    },
     "Saved service statuses could not be read: %@" : {
 
     },
@@ -1080,6 +1104,9 @@
 
     },
     "See when Assistant is due to run your reminders." : {
+
+    },
+    "Select a file" : {
 
     },
     "Select a reminder" : {
@@ -1286,6 +1313,9 @@
     "The response exceeded the client display limit." : {
 
     },
+    "The saved choice is unavailable. Select a configured option before saving this setting." : {
+
+    },
     "The saved model list could not be read. Refresh it to try again." : {
 
     },
@@ -1319,6 +1349,12 @@
     "These changes have not been saved to the server." : {
 
     },
+    "This Markdown file is not valid UTF-8 text." : {
+
+    },
+    "This PDF could not be opened. It may be damaged or encrypted." : {
+
+    },
     "This attachment is no longer available for download." : {
 
     },
@@ -1329,6 +1365,9 @@
 
     },
     "This changes server data or may interrupt active work. An interrupted operation can have partial effects. Inspect its outcome before trying again." : {
+
+    },
+    "This file exceeds the %@ limit for this view." : {
 
     },
     "This folder is empty." : {
@@ -1467,6 +1506,9 @@
 
     },
     "live updates" : {
+
+    },
+    "macOS cannot play this media format or codec. Download it to use another player." : {
 
     },
     "permission requests" : {
