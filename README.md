@@ -15,7 +15,7 @@ connection without keeping a terminal open.
 | **Chats** | Search conversations, read Markdown and code, open attachments, play audio, and inspect tool activity. |
 | **Reminders** | Check schedules and past results. Start a new chat to ask about a scheduled run. |
 | **Connection & Support** | Select the connection status in the sidebar for service health, diagnostics, and workspace files. |
-| **Settings** | Browse settings and review changes before saving. Under **Assistant > Skills**, inspect locked workflows or manage custom skills and preference overlays. |
+| **Settings** | Browse settings and review changes before saving. Under **Assistant > Skills**, manage custom skills or open a locked workflow to edit its instructions-only preferences. |
 | **Live updates** | Receive resumable updates with polling fallback and optional macOS notifications while the app is open. |
 
 ## Download

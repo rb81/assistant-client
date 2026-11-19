@@ -1234,6 +1234,36 @@
     },
     "Title" : {
 
+    },
+    "Edit preferences" : {
+
+    },
+    "Include what the Assistant should do and when. Preferences load automatically with this skill for admin requests." : {
+
+    },
+    "No preferences set." : {
+
+    },
+    "Preference instructions" : {
+
+    },
+    "Preferences" : {
+
+    },
+    "Publish preferences" : {
+
+    },
+    "Publish preferences?" : {
+
+    },
+    "Remove preferences" : {
+
+    },
+    "Remove preferences?" : {
+
+    },
+    "The locked skill will not change." : {
+
     }
   },
   "version" : "1.0"

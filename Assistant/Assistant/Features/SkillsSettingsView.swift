@@ -9,6 +9,7 @@ struct SkillEntry: Decodable, Identifiable {
     let locked: Bool
     let overlayFor: String?
     let body: String?
+    let preferences: SkillPreference?
 
     /// Locks descriptive fields and the expected revision into a reviewed mutation.
     func deletion() -> JSONValue? {
@@ -23,6 +24,15 @@ struct SkillEntry: Decodable, Identifiable {
     }
 }
 
+/// Editable instructions attached to a locked workflow.
+struct SkillPreference: Decodable {
+    let id: String
+    let title: String
+    let description: String
+    let revision: String
+    let body: String
+}
+
 /// Settings for inspecting locked workflows and managing versioned custom guidance.
 struct SkillsSettingsView: View {
     let model: ClientModel
@@ -35,12 +45,18 @@ struct SkillsSettingsView: View {
     @State private var loading = false
     @State private var busy = false
     @State private var editor: SkillDraft?
-    @State private var pendingDeletion: SkillEntry?
+    @State private var pendingDeletion: Deletion?
     @State private var deleting = false
 
     private struct Page: Decodable {
         let skills: [SkillEntry]
         let total: Int
+    }
+
+    private struct Deletion {
+        let payload: JSONValue
+        let title: String
+        let parentID: String?
     }
 
     private struct SearchPage: Equatable {
@@ -53,6 +69,7 @@ struct SkillsSettingsView: View {
         SearchPage(query: search, offset: offset, instanceID: model.health?.instanceID)
     }
     private var supported: Bool { model.health?.capabilities.contains("skills.manage") == true }
+    private var attachedPreferences: Bool { model.health?.capabilities.contains("skills.preferences") == true }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacing) {
@@ -89,18 +106,23 @@ struct SkillsSettingsView: View {
             SkillEditor(draft: draft) { payload in
                 _ = try await model.perform(payload)
                 await load(searchPage)
-                if let identifier = payload["arguments"]?["id"]?.string {
+                if let identifier = draft.refreshParent ?? payload["arguments"]?["id"]?.string {
                     await open(identifier)
                 }
             }
         }
-        .confirmationDialog("Delete this skill?", isPresented: $deleting, titleVisibility: .visible,
-                            presenting: pendingDeletion) { skill in
-            Button("Delete skill", role: .destructive) {
-                if let payload = skill.deletion() { Task { await delete(payload) } }
+        .confirmationDialog(pendingDeletion?.parentID == nil ? "Delete this skill?" : "Remove preferences?",
+                            isPresented: $deleting, titleVisibility: .visible,
+                            presenting: pendingDeletion) { deletion in
+            Button(deletion.parentID == nil ? "Delete skill" : "Remove preferences", role: .destructive) {
+                Task { await delete(deletion) }
             }
-        } message: { skill in
-            Text("Remove \(skill.title) from the active skill catalog?")
+        } message: { deletion in
+            if deletion.parentID == nil {
+                Text("Remove \(deletion.title) from the active skill catalog?")
+            } else {
+                Text("The locked skill will not change.")
+            }
         }
         .disabled(busy)
     }
@@ -146,12 +168,11 @@ struct SkillsSettingsView: View {
                     Text(skill.title).font(.title3.weight(.semibold))
                     if skill.locked { Label("Locked", systemImage: "lock").foregroundStyle(Theme.secondary) }
                     Spacer()
-                    if skill.locked {
-                        Button("Add preferences") { editor = SkillDraft(parent: skill.id) }
-                    } else {
+                    if !skill.locked {
                         Button("Edit skill") { editor = SkillDraft(skill: skill) }
                         Button("Delete skill…", role: .destructive) {
-                            pendingDeletion = skill
+                            guard let payload = skill.deletion() else { return }
+                            pendingDeletion = Deletion(payload: payload, title: skill.title, parentID: nil)
                             deleting = true
                         }
                     }
@@ -159,6 +180,30 @@ struct SkillsSettingsView: View {
                 Text("\(skill.id) · Revision \(skill.revision)").font(.caption).foregroundStyle(Theme.secondary)
                 if let parent = skill.overlayFor { Text("Preferences for \(parent)").font(.caption) }
                 Text(skill.body ?? "").textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                if skill.locked {
+                    Divider()
+                    HStack {
+                        Text("Preferences").font(.headline)
+                        Spacer()
+                        Button(skill.preferences == nil ? "Add preferences" : "Edit preferences") {
+                            editor = SkillDraft(parent: skill.id, preference: skill.preferences, attached: attachedPreferences)
+                        }
+                        if let preference = skill.preferences {
+                            Button("Remove preferences", role: .destructive) {
+                                let payload = SkillEntry.mutation("delete", [
+                                    "id": .string(preference.id), "revision": .string(preference.revision)
+                                ])
+                                pendingDeletion = Deletion(payload: payload, title: preference.title, parentID: skill.id)
+                                deleting = true
+                            }
+                        }
+                    }
+                    if let preference = skill.preferences {
+                        Text(preference.body).textSelection(.enabled)
+                    } else {
+                        Text("No preferences set.").foregroundStyle(Theme.secondary)
+                    }
+                }
             }
         }
     }
@@ -174,9 +219,11 @@ struct SkillsSettingsView: View {
         loading = true
         defer { if !Task.isCancelled && request == searchPage { loading = false } }
         do {
-            let page = try await fetch("list", [
+            var arguments: [String: JSONValue] = [
                 "query": .string(request.query), "offset": .integer(Int64(request.offset)), "limit": .integer(8)
-            ], as: Page.self)
+            ]
+            if attachedPreferences { arguments["include_overlays"] = .bool(false) }
+            let page = try await fetch("list", arguments, as: Page.self)
             guard !Task.isCancelled, request == searchPage else { return }
             if request.offset > 0 && request.offset >= page.total {
                 offset = max(0, ((page.total - 1) / 8) * 8)
@@ -199,12 +246,13 @@ struct SkillsSettingsView: View {
         } catch { self.error = error.presentableMessage }
     }
 
-    private func delete(_ payload: JSONValue) async {
+    private func delete(_ deletion: Deletion) async {
         busy = true
         defer { busy = false }
         do {
-            _ = try await model.perform(payload)
-            selected = nil
+            _ = try await model.perform(deletion.payload)
+            if let parentID = deletion.parentID { await open(parentID) }
+            else { selected = nil }
             await load(searchPage)
         } catch { self.error = error.presentableMessage }
     }
@@ -215,27 +263,42 @@ private struct SkillDraft: Identifiable {
     let id = UUID()
     let revision: String?
     let parent: String?
+    let refreshParent: String?
     var identifier: String
     var title: String
     var description: String
     var body: String
 
-    init(skill: SkillEntry? = nil, parent: String? = nil) {
+    init(skill: SkillEntry? = nil) {
         revision = skill?.revision
-        self.parent = parent
-        identifier = skill?.id ?? parent.map { "\($0).PREFERENCES" } ?? ""
+        parent = skill?.overlayFor
+        refreshParent = nil
+        identifier = skill?.id ?? ""
         title = skill?.title ?? ""
         description = skill?.description ?? ""
         body = skill?.body ?? ""
     }
 
+    init(parent: String, preference: SkillPreference?, attached: Bool) {
+        revision = preference?.revision
+        self.parent = parent
+        refreshParent = attached ? parent : nil
+        identifier = preference?.id ?? "\(parent).PREFERENCES"
+        title = preference?.title ?? "\(parent) preferences"
+        description = preference?.description ?? "Operator preferences for \(parent)."
+        body = preference?.body ?? ""
+    }
+
     var payload: JSONValue {
+        if let parent, revision == nil, refreshParent != nil {
+            return SkillEntry.mutation("create", ["overlay_for": .string(parent), "body": .string(body)])
+        }
         var fields: [String: JSONValue] = [
             "id": .string(identifier), "title": .string(title),
             "description": .string(description), "body": .string(body)
         ]
         if let revision { fields["revision"] = .string(revision) }
-        if let parent { fields["overlay_for"] = .string(parent) }
+        if let parent, revision == nil { fields["overlay_for"] = .string(parent) }
         return SkillEntry.mutation(revision == nil ? "create" : "edit", fields)
     }
 }
@@ -251,13 +314,20 @@ private struct SkillEditor: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.spacing) {
-            Text(draft.revision == nil ? "Add skill" : "Edit skill").font(.title2.weight(.semibold))
+            Text(draft.parent != nil ? "Preferences" : (draft.revision == nil ? "Add skill" : "Edit skill"))
+                .font(.title2.weight(.semibold))
             if let error { ErrorBanner(message: error) }
-            TextField("Skill ID", text: $draft.identifier).disabled(draft.revision != nil)
-            TextField("Title", text: $draft.title)
-            TextField("Description", text: $draft.description)
-            Text("Skill instructions").font(.headline)
-            TextEditor(text: $draft.body).font(.body.monospaced()).accessibilityLabel("Skill instructions")
+            if draft.parent == nil {
+                TextField("Skill ID", text: $draft.identifier).disabled(draft.revision != nil)
+                TextField("Title", text: $draft.title)
+                TextField("Description", text: $draft.description)
+            } else {
+                Text("Include what the Assistant should do and when. Preferences load automatically with this skill for admin requests.")
+                    .foregroundStyle(Theme.secondary)
+            }
+            Text(draft.parent == nil ? "Skill instructions" : "Preference instructions").font(.headline)
+            TextEditor(text: $draft.body).font(.body.monospaced())
+                .accessibilityLabel(draft.parent == nil ? "Skill instructions" : "Preference instructions")
             HStack {
                 StableProgress(active: saving)
                 Spacer()
@@ -270,8 +340,9 @@ private struct SkillEditor: View {
         }
         .padding(24).frame(width: 580, height: 480).disabled(saving)
         .interactiveDismissDisabled(saving)
-        .confirmationDialog("Publish this skill revision?", isPresented: $review, titleVisibility: .visible) {
-            Button("Publish skill") {
+        .confirmationDialog(draft.parent == nil ? "Publish this skill revision?" : "Publish preferences?",
+                            isPresented: $review, titleVisibility: .visible) {
+            Button(draft.parent == nil ? "Publish skill" : "Publish preferences") {
                 let payload = draft.payload
                 saving = true
                 Task {

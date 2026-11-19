@@ -2,7 +2,7 @@ import XCTest
 
 /// Native launch smoke test performs no server connection.
 final class AssistantUITests: XCTestCase {
-    /// Locked guidance is readable, but edits open a separate preference draft.
+    /// Locked guidance and attached preferences stay on the same screen.
     @MainActor
     func testLockedSkillIsReadableAndCanStartPreferenceDraft() {
         let app = XCUIApplication()
@@ -20,9 +20,21 @@ final class AssistantUITests: XCTestCase {
         email.click()
         XCTAssertTrue(app.staticTexts["Verify the recipient before composing the message."].waitForExistence(timeout: 10))
         XCTAssertFalse(app.buttons["Edit skill"].exists)
+        XCTAssertFalse(app.buttons["skill-EMAIL.LEGACY"].exists)
+        XCTAssertTrue(app.staticTexts["Use this signoff for outgoing email."].exists)
+        app.buttons["Edit preferences"].click()
+        let instructions = app.textViews["Preference instructions"]
+        XCTAssertTrue(instructions.waitForExistence(timeout: 10))
+        XCTAssertEqual(instructions.value as? String, "Use this signoff for outgoing email.")
+        XCTAssertFalse(app.textFields["Skill ID"].exists)
+        XCTAssertFalse(app.textFields["Title"].exists)
+        XCTAssertFalse(app.textFields["Description"].exists)
+        app.buttons["Cancel"].click()
+        app.buttons["skill-CALENDAR"].click()
+        XCTAssertTrue(app.staticTexts["No preferences set."].waitForExistence(timeout: 10))
         app.buttons["Add preferences"].click()
-        XCTAssertTrue(app.textFields["Skill ID"].waitForExistence(timeout: 10))
-        XCTAssertEqual(app.textFields["Skill ID"].value as? String, "EMAIL.PREFERENCES")
+        XCTAssertTrue(instructions.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.textFields["Skill ID"].exists)
     }
 
     /// Settings keep one navigation column while lazy reads and saving preserve the draft.

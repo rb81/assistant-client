@@ -180,9 +180,12 @@ actor PreviewManagementAPI: ManagementAPI {
         } else if resource.hasPrefix("approvals") {
             value = .object(["approvals": .array([])])
         } else if resource == "query", body?["action"] == .string("skills.list") {
-            value = .object(["total": .integer(1), "skills": .array([skill(includeBody: false)])])
-        } else if resource == "query", body?["action"] == .string("skills.read"), body?["arguments"]?["id"] == .string("EMAIL") {
-            value = skill(includeBody: true)
+            value = .object(["total": .integer(2), "skills": .array([
+                skill(email: false, includeBody: false), skill(email: true, includeBody: false)
+            ])])
+        } else if resource == "query", body?["action"] == .string("skills.read"),
+                  let id = body?["arguments"]?["id"]?.string, ["EMAIL", "CALENDAR"].contains(id) {
+            value = skill(email: id == "EMAIL", includeBody: true)
         } else if resource == "query", body?["action"] == .string("workspace.list") {
             value = .object(["entries": .array([.object([
                 "path": .string("notes"), "is_dir": .bool(true), "size_bytes": .integer(0)
@@ -291,12 +294,19 @@ actor PreviewManagementAPI: ManagementAPI {
         return try JSONEncoder().encode(value)
     }
 
-    private func skill(includeBody: Bool) -> JSONValue {
+    private func skill(email: Bool, includeBody: Bool) -> JSONValue {
         var fields: [String: JSONValue] = [
-            "id": .string("EMAIL"), "title": .string("Email"), "description": .string("Draft and reply to email."),
+            "id": .string(email ? "EMAIL" : "CALENDAR"), "title": .string(email ? "Email" : "Calendar"),
+            "description": .string(email ? "Draft and reply to email." : "Manage calendar events."),
             "revision": .string("fixture-rev"), "locked": .bool(true), "overlay_for": .null
         ]
-        if includeBody { fields["body"] = .string("Verify the recipient before composing the message.") }
+        if includeBody {
+            fields["body"] = .string(email ? "Verify the recipient before composing the message." : "Check availability first.")
+            fields["preferences"] = email ? .object([
+                "id": .string("EMAIL.LEGACY"), "title": .string("Signature"), "description": .string("Signoff"),
+                "revision": .string("3"), "body": .string("Use this signoff for outgoing email.")
+            ]) : .null
+        }
         return .object(fields)
     }
 
