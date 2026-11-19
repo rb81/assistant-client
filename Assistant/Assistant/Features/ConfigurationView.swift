@@ -57,7 +57,7 @@ struct ConfigurationView: View {
             Button(apply ? "Save & Apply" : "Save configuration") { Task { await save() } }
         } message: {
             Text(apply ? "Affected application services will be started or recreated. Active work may be interrupted. Enabled connections may begin processing messages." :
-                 "This saves your changes without restarting Assistant. If they need activation, you can apply them later from Connections.")
+                 "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready.")
         }
     }
 
@@ -232,6 +232,9 @@ struct ConfigurationView: View {
                         .buttonStyle(PrimaryButtonStyle()).disabled(busy)
                 }
             } else {
+                if !model.configurationDirty && model.activationState != .active {
+                    Button("Review & Apply") { model.activationReviewPresented = true }.disabled(busy)
+                }
                 Button("Review changes") { Task { await review() } }
                     .buttonStyle(PrimaryButtonStyle()).disabled(!model.configurationDirty || busy)
             }
@@ -303,7 +306,11 @@ struct ConfigurationView: View {
 
     private func visible(_ fields: [SettingField], root: SettingGroup) -> [SettingField] {
         guard let navigation else { return [] }
-        return fields.filter { navigation.category(for: root, field: $0) == category }
+        return fields.filter {
+            navigation.category(for: root, field: $0) == category &&
+                !(category != .advanced && $0.key.hasPrefix("AGENT_TTS_") &&
+                  $0.key != "AGENT_TTS_ENABLED" && effectiveValue("AGENT_TTS_ENABLED") != "true")
+        }
     }
 
     private func fieldList(_ fields: [SettingField]) -> some View {
@@ -313,7 +320,7 @@ struct ConfigurationView: View {
                            credential: credentials.first { $0.name == field.key },
                            credentialStatusLoaded: credentialStatusLoaded,
                            modelCatalog: model.modelCatalog, modelPurpose: modelPurpose(field),
-                           zdrOnly: zdrOnly(field), value: binding(field))
+                           zdrOnly: zdrOnly(field), choices: voiceChoices(field), value: binding(field))
                     .disabled(ModelPurpose.forSetting(field.key) != nil && !modelAccessLoaded)
                     .id(field.key)
                 if field.id != fields.last?.id { Divider() }
@@ -323,6 +330,14 @@ struct ConfigurationView: View {
 
     private func effectiveValue(_ key: String) -> String {
         values[key] ?? loadedFields[key]?.value ?? modelAccess[key] ?? ""
+    }
+
+    private func voiceChoices(_ field: SettingField) -> [String]? {
+        guard field.key == "AGENT_TTS_VOICE" else { return nil }
+        let voices = model.modelCatalog.models(zdr: zdrOnly(field), purpose: .speech).first {
+            $0.id == effectiveValue("AGENT_TTS_MODEL")
+        }?.supportedVoices
+        return voices?.isEmpty == false ? voices : nil
     }
 
     private func modelPurpose(_ field: SettingField) -> ModelPurpose? {
@@ -339,12 +354,13 @@ struct ConfigurationView: View {
 
     private func zdrOnly(_ field: SettingField) -> Bool {
         effectiveValue("AGENT_LLM_ZDR_ONLY") == "true" ||
-            (field.key == "AGENT_TTS_MODEL" && effectiveValue("AGENT_TTS_ZDR_ONLY") == "true")
+            (field.key.hasPrefix("AGENT_TTS_") && effectiveValue("AGENT_TTS_ZDR_ONLY") == "true")
     }
 
     /// Extra accounts stay collapsed so one provider's spare slots do not bury the rest of the page.
     @ViewBuilder private func accountList(_ accounts: [SettingGroup], root: SettingGroup, navigation: SettingsNavigation) -> some View {
         if let first = accounts.first {
+        let saved = Set(configuration?.credentialNames ?? credentials.filter { $0.status != "removal pending" }.map(\.name))
         DisclosureGroup(isExpanded: accountExpansion(first.id + ":list")) {
             VStack(alignment: .leading, spacing: 10) {
                 if let help = accounts.first?.help {
@@ -356,15 +372,19 @@ struct ConfigurationView: View {
                     } label: {
                         HStack {
                             Text(account.title)
-                            if navigation.configured(account) { StatusBadge(title: String(localized: "Configured"), tone: .green) }
+                            if navigation.configured(account, credentials: saved) {
+                                StatusBadge(title: String(localized: "Set up"), tone: .green)
+                            } else if navigation.fields(in: account.id).contains(where: { $0.secret && saved.contains($0.key) }) {
+                                StatusBadge(title: String(localized: "Incomplete setup"), tone: .orange)
+                            }
                         }
                     }
                 }
             }.padding(.top, 8)
         } label: {
-            let count = accounts.filter(navigation.configured).count
+            let count = accounts.filter { navigation.configured($0, credentials: saved) }.count
             Text(count == 0 ? String(localized: "Additional accounts") :
-                    String(localized: "Additional accounts (\(count) configured)"))
+                    String(localized: "Additional accounts (\(count) set up)"))
                 .font(.callout.weight(.medium))
         }
         }
@@ -630,9 +650,13 @@ struct ConfigurationView: View {
             _ = try await model.perform(.object(payload))
             model.recordActivation(apply ? .active : .pending)
             notice = apply ? String(localized: "Configuration saved and application services activated.") :
-                String(localized: "Saved. Apply changes from Connections when you are ready.")
+                String(localized: "Saved. Choose Review & Apply when you are ready.")
             await load()
             await model.refreshAssistantName()
+            if model.health?.capabilities.contains("configuration.activation") == true {
+                do { try await model.refreshActivation() }
+                catch { self.error = error.presentableMessage ?? self.error }
+            }
             offerFirstChat = starting
         } catch {
             model.recordActivation(.unknown)

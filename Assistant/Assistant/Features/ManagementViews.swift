@@ -24,6 +24,47 @@ enum ServiceAppearance {
     }
 }
 
+/// Connection facts contain no tokens, credentials, or private tunnel endpoints.
+struct ConnectionSummary: View {
+    let model: ClientModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Label("Server connection", systemImage: model.profile.local ? "desktopcomputer" : "network")
+                .font(.headline)
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 10) {
+                fact(String(localized: "Status"), model.status)
+                fact(String(localized: "Destination"), model.profile.local ? String(localized: "On this Mac") :
+                        model.profile.host.isEmpty ? String(localized: "SSH destination not provided") :
+                        "\(model.profile.host) · \(model.profile.sshPort)")
+                fact(String(localized: "Transport"), model.profile.local ?
+                        String(localized: "Authenticated local HTTP") : String(localized: "Authenticated HTTP through SSH"))
+                fact(String(localized: "Updates"), model.liveUpdates ? String(localized: "Live stream connected") :
+                        String(localized: "Polling for updates"))
+                fact(String(localized: "Last response"), model.lastPoll.map {
+                    $0.formatted(date: .omitted, time: .standard)
+                } ?? String(localized: "Not checked in this session"))
+            }
+            if let health = model.health {
+                DisclosureGroup("Installation details") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(health.name)
+                        Text("Management API v\(health.apiVersion)")
+                        Text(health.instanceID).font(.caption.monospaced()).textSelection(.enabled)
+                    }.padding(.top, 6)
+                }.font(.callout).foregroundStyle(Theme.secondary)
+            }
+        }
+    }
+
+    private func fact(_ label: String, _ value: String) -> some View {
+        GridRow(alignment: .top) {
+            Text(label).font(.callout).foregroundStyle(Theme.secondary)
+            Text(value).font(.callout).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 /// A clear service inventory and deliberate lifecycle controls replace the technical status dump.
 struct ServicesView: View {
     let model: ClientModel
@@ -36,9 +77,8 @@ struct ServicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 PageHeading(title: "Connections", subtitle: "Your server connection, service health, and diagnostics.")
+                ManagementPanel { ConnectionSummary(model: model) }
                 HStack {
-                    StatusBadge(title: model.status, tone: model.pollingError == nil ? .green : .orange)
-                    Text(model.profile.name).font(.headline)
                     StableProgress(active: model.servicesLoading)
                     Spacer()
                     Button(model.servicesError == nil ? "Refresh" : "Retry", systemImage: "arrow.clockwise") { Task { await load() } }
@@ -70,7 +110,7 @@ struct ServicesView: View {
                     }
                     Spacer()
                     if model.activationState == .pending {
-                        Button("Apply saved settings") { lifecycle("apply") }
+                        Button("Apply saved settings") { model.activationReviewPresented = true }
                             .disabled(model.servicesError != nil)
                     }
                     Menu("Service actions") {

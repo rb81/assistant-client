@@ -17,6 +17,8 @@ final class ClientModel {
         case active, pending, unknown
     }
     var activationState = ActivationState.active
+    var activationSummary: ConfigurationActivation?
+    var activationReviewPresented = false
     var profiles: [ConnectionProfile] = []
     var profile = ConnectionProfile()
     var health: InstanceHealth?
@@ -71,6 +73,14 @@ final class ClientModel {
                 !operations.contains(where: { $0.id == reference.operationID })
         }
     }
+    /// An absent receipt is not evidence that a service action did not run.
+    var unconfirmedActivationAction: Bool {
+        unconfirmedReferences.contains { ["service.lifecycle", "configuration.save"].contains($0.action) }
+    }
+    /// Applying must wait for known configuration writes and service actions to finish.
+    var pendingActivationAction: Bool {
+        operations.contains { ["service.lifecycle", "configuration.save"].contains($0.action) && $0.pending }
+    }
     private var pollTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var approvalTask: Task<Void, Never>?
@@ -79,6 +89,7 @@ final class ClientModel {
     private var notificationIDs: Set<String> = []
     private var notificationOrder: [String] = []
     private var generation = UUID()
+    private var activationVersion = UUID()
 
     /// Loads only non-secret metadata and reports malformed local state explicitly.
     init(defaults: UserDefaults = .standard, api: (any ManagementAPI)? = nil, health: InstanceHealth? = nil,
@@ -206,6 +217,8 @@ final class ClientModel {
         services = []; servicesUpdatedAt = nil; servicesError = nil; servicesLoading = false
         requestDurations = [:]
         activationState = .active
+        activationSummary = nil
+        activationReviewPresented = false
         setupRequired = false
         status = String(localized: "Disconnected")
         await connection.disconnect()
@@ -320,8 +333,25 @@ final class ClientModel {
     /// Records explicit activation outcomes separately from whether a draft has been saved.
     func recordActivation(_ state: ActivationState) {
         guard let instance = health?.instanceID else { return }
+        activationVersion = UUID()
         activationState = state
         defaults.set(state.rawValue, forKey: "assistant.activation.\(instance)")
+    }
+
+    /// Old servers retain the local warning but cannot fabricate a reviewed change list.
+    func refreshActivation() async throws {
+        guard health?.capabilities.contains("configuration.activation") == true else {
+            throw ClientError.serverOutdated(String(localized: "saved-settings activation review"))
+        }
+        let version = activationVersion
+        let response = try await read("configuration/activation")
+        guard version == activationVersion else { throw CancellationError() }
+        let summary = try Wire.decoder().decode(ConfigurationActivation.self, from: JSONEncoder().encode(response))
+        activationSummary = summary
+        if summary.tracked,
+           activationState != .unknown || (!unconfirmedActivationAction && !pendingActivationAction) {
+            recordActivation(summary.pending ? .pending : .active)
+        }
     }
 
     /// Unread updates remain visible independently of the active conversation filter.

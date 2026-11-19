@@ -12,12 +12,12 @@ connection without keeping a terminal open.
 
 | Feature | What it does |
 |---|---|
-| **Chats** | Search conversations, mark them read or unread, read Markdown and code, open attachments, play audio, and inspect tool activity. Replies use your configured assistant's name. |
+| **Chats** | Search conversations, mark them read or unread, select multiline prose, copy any complete message, open attachments, play audio, and inspect tool activity. Replies use your configured assistant's name. |
 | **Reminders** | Check schedules and past results. Start a new chat to ask about a scheduled run. |
 | **Connections** | Open service health, activation, connection diagnostics, and request timings directly from the sidebar. |
 | **Data** | Browse workspace files and manage installation data from the sidebar. |
 | **Activity** | Use the toolbar bell for permission requests, real reply/update notices, and operation history. Unconfirmed actions are distinct from approval requests and are never automatically repeated. |
-| **Settings** | Retain loaded pages while navigating, edit instructions in a bounded Markdown editor, and review changes before saving. Under **Assistant > Skills**, browse 20 skills per page and manage custom guidance or locked-workflow preferences. |
+| **Settings** | Keep ordinary setup beside each feature's enable switch, with power-user tuning under Advanced. Retain drafts while navigating, edit instructions in a bounded Markdown editor, and review before saving. A persistent **Review & Apply** banner lists saved changes awaiting activation. Skills show 20 per page. |
 | **OpenRouter models** | Search cached, capability-filtered model lists. Require ZDR in server settings; manage weekly/manual catalog refresh in local App settings. |
 | **Live updates** | Receive resumable updates with polling fallback and optional macOS notifications while the app is open. |
 
@@ -54,7 +54,9 @@ passwords. Quitting closes the tunnel, not the server or running tasks.
 
 OpenRouter's public catalog indicates model and ZDR eligibility, not guaranteed
 access under your account's guardrails. ZDR routing, improved settings metadata,
-and recovery of missing operation receipts require the updated server. Model-list
+recovery of missing operation receipts, and saved-change activation reviews
+require the updated server. Activation history starts with saves made through the
+updated management service; earlier saves cannot be reconstructed. Model-list
 refresh preferences and caches stay on this Mac.
 
 ## Development

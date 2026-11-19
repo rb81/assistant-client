@@ -88,6 +88,19 @@ struct ContentView: View {
                 if model.health == nil {
                     disconnected
                 } else {
+                    if model.activationState != .active {
+                        HStack(spacing: 12) {
+                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+                            Text(model.activationState == .pending ? "Saved settings need applying" :
+                                    "Settings activation needs checking").font(.callout.weight(.medium))
+                            Spacer()
+                            Button("Review & Apply") { model.activationReviewPresented = true }
+                        }
+                        .padding(.horizontal, 20).padding(.vertical, 12).background(Theme.panel)
+                        .accessibilityElement(children: .contain)
+                        .accessibilityIdentifier("pending-settings-banner")
+                        Divider()
+                    }
                     ZStack {
                     if settingsOpened {
                         ConfigurationView(model: model)
@@ -174,6 +187,15 @@ struct ContentView: View {
             ConnectionView(model: model, isPresented: $showingConnection)
         }
         .sheet(isPresented: $model.activityPresented) { ActivityView(model: model) }
+        .sheet(isPresented: $model.activationReviewPresented) { ApplySettingsView(model: model) }
+        .task(id: model.health?.instanceID) {
+            guard model.health?.capabilities.contains("configuration.activation") == true else { return }
+            while !Task.isCancelled {
+                do { try await model.refreshActivation() }
+                catch { if let message = error.presentableMessage { model.error = message } }
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
+        }
         .task(id: model.health?.instanceID) {
             guard model.health != nil else { return }
             await model.refreshAssistantName()
@@ -212,15 +234,14 @@ struct ContentView: View {
                     if model.error != nil { Button("Dismiss notice") { model.error = nil } }
                 }
                 if model.health != nil {
-                    Text(model.profile.name).font(.headline)
-                    Text(model.liveUpdates ? "Live updates are on" : "Checking for updates")
-                        .foregroundStyle(Theme.secondary)
-                    Button("Connection details") { showingStatus = false; navigate(.services) }
+                    ConnectionSummary(model: model)
+                    Divider()
+                    Button("Open Connections") { showingStatus = false; navigate(.services) }
                 } else {
                     Button("Connect") { showingStatus = false; showingConnection = true }
                 }
             }
-            .padding().frame(width: 340, alignment: .leading)
+            .padding(20).frame(width: 400, alignment: .leading)
         }
     }
 

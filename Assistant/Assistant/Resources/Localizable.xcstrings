@@ -63,6 +63,9 @@
     "A saved model is not in this catalog or does not meet this field’s requirements. Choose an eligible model before saving." : {
 
     },
+    "A settings or service action is still running. Wait for its result in Activity before applying." : {
+
+    },
     "About %@" : {
 
     },
@@ -109,7 +112,7 @@
     "Additional accounts" : {
 
     },
-    "Additional accounts (%lld configured)" : {
+    "Additional accounts (%lld set up)" : {
 
     },
     "Advanced" : {
@@ -133,7 +136,13 @@
     "Allowed values" : {
 
     },
+    "An earlier settings or service action has no confirmed outcome. Check Activity before applying again; this may repeat it." : {
+
+    },
     "An unconfirmed submission is not an approval request. Assistant never automatically repeats an action whose outcome is unknown." : {
+
+    },
+    "Application images will be built before startup. This may take a few minutes." : {
 
     },
     "Application services" : {
@@ -176,6 +185,12 @@
 
     },
     "Audio playback could not start. Download the file to open it in another player." : {
+
+    },
+    "Authenticated HTTP through SSH" : {
+
+    },
+    "Authenticated local HTTP" : {
 
     },
     "Automatic naming failed" : {
@@ -226,10 +241,10 @@
     "Check operation history" : {
 
     },
-    "Check that Docker is running on the computer that hosts Assistant, then retry." : {
+    "Check outstanding actions and unsaved changes before applying." : {
 
     },
-    "Checking for updates" : {
+    "Check that Docker is running on the computer that hosts Assistant, then retry." : {
 
     },
     "Choose OpenRouter model" : {
@@ -256,9 +271,6 @@
     "Configuration saved and application services activated." : {
 
     },
-    "Configured" : {
-
-    },
     "Confirm" : {
 
     },
@@ -281,9 +293,6 @@
 
     },
     "Connecting" : {
-
-    },
-    "Connection details" : {
 
     },
     "Connection failed" : {
@@ -314,6 +323,12 @@
 
     },
     "Copy code" : {
+
+    },
+    "Copy message" : {
+
+    },
+    "Couldn’t copy text" : {
 
     },
     "Couldn’t open this folder." : {
@@ -380,6 +395,9 @@
 
     },
     "Description" : {
+
+    },
+    "Destination" : {
 
     },
     "Discard and disconnect" : {
@@ -457,6 +475,9 @@
     "Hide tool calls" : {
 
     },
+    "I checked Activity and intend to apply again" : {
+
+    },
     "I understand the setup and isolation warnings" : {
 
     },
@@ -466,7 +487,13 @@
     "Include what the Assistant should do and when. Preferences load automatically with this skill for admin requests." : {
 
     },
+    "Incomplete setup" : {
+
+    },
     "Inspect shipped workflows or publish custom guidance and preference overlays." : {
+
+    },
+    "Installation details" : {
 
     },
     "Installation on this Mac" : {
@@ -490,13 +517,16 @@
     "Last refreshed %@" : {
 
     },
+    "Last response" : {
+
+    },
     "Latest" : {
 
     },
     "Leave blank to keep the saved value" : {
 
     },
-    "Live updates are on" : {
+    "Live stream connected" : {
 
     },
     "Live updates paused. Checking periodically." : {
@@ -520,6 +550,9 @@
     "Load older reminders" : {
 
     },
+    "Load the saved configuration into Assistant’s application services. Active work may be interrupted, and enabled connections may start processing messages." : {
+
+    },
     "Loading conversation…" : {
 
     },
@@ -533,6 +566,9 @@
 
     },
     "Make and verify a server backup before resetting." : {
+
+    },
+    "Management API v%lld" : {
 
     },
     "Management request failed with HTTP %lld. Check authentication, saved configuration, and server health." : {
@@ -637,6 +673,9 @@
     "No retained receipt matches this submission. This does not prove that the action failed; check the affected item before retrying." : {
 
     },
+    "No saved changes are awaiting activation." : {
+
+    },
     "No saved key" : {
 
     },
@@ -647,6 +686,9 @@
 
     },
     "Not checked" : {
+
+    },
+    "Not checked in this session" : {
 
     },
     "Not installed yet." : {
@@ -673,7 +715,13 @@
     "Notifications are not enabled. In-app updates remain available." : {
 
     },
+    "OK" : {
+
+    },
     "On this Mac" : {
+
+    },
+    "Open Connections" : {
 
     },
     "Open conversation" : {
@@ -723,6 +771,9 @@
 
     },
     "Playback position" : {
+
+    },
+    "Polling for updates" : {
 
     },
     "Preference instructions" : {
@@ -783,6 +834,9 @@
 
     },
     "Reload" : {
+
+    },
+    "Reload changes" : {
 
     },
     "Reload settings" : {
@@ -860,6 +914,9 @@
     "Review" : {
 
     },
+    "Review & Apply" : {
+
+    },
     "Review & publish" : {
 
     },
@@ -897,6 +954,9 @@
 
     },
     "SSH could not resolve this host. Check the destination or SSH configuration alias." : {
+
+    },
+    "SSH destination not provided" : {
 
     },
     "SSH did not become ready in time. Check server reachability and authentication." : {
@@ -941,6 +1001,9 @@
     "Save or discard your Settings draft before resetting." : {
 
     },
+    "Save or discard your unsaved Settings draft before applying." : {
+
+    },
     "Save reviewed changes?" : {
 
     },
@@ -965,7 +1028,13 @@
     "Saved service statuses could not be read: %@" : {
 
     },
+    "Saved settings need applying" : {
+
+    },
     "Saved settings need applying. Review and apply when you are ready." : {
+
+    },
+    "Saved values awaiting activation" : {
 
     },
     "Saved · Apply to activate" : {
@@ -974,7 +1043,7 @@
     "Saved · Needs applying" : {
 
     },
-    "Saved. Apply changes from Connections when you are ready." : {
+    "Saved. Choose Review & Apply when you are ready." : {
 
     },
     "Scheduled reminder" : {
@@ -1034,6 +1103,9 @@
     "Sent externally" : {
 
     },
+    "Server connection" : {
+
+    },
     "Server receipts for actions you take will appear here." : {
 
     },
@@ -1046,7 +1118,13 @@
     "Services" : {
 
     },
+    "Set up" : {
+
+    },
     "Settings" : {
+
+    },
+    "Settings activation needs checking" : {
 
     },
     "Settings changed on the server. Reload before editing." : {
@@ -1058,7 +1136,13 @@
     "Settings changed on the server. Your draft is preserved; discard it and reload before saving." : {
 
     },
+    "Settings changed while loading. Reload the saved changes." : {
+
+    },
     "Settings feedback" : {
+
+    },
+    "Settings saved since the last successful apply. This is not a comparison with live container values." : {
 
     },
     "Settings sections" : {
@@ -1127,6 +1211,9 @@
     "Starting up…" : {
 
     },
+    "Status" : {
+
+    },
     "Status unknown" : {
 
     },
@@ -1167,6 +1254,9 @@
 
     },
     "The client selected an invalid API resource." : {
+
+    },
+    "The clipboard could not be updated. Try copying again." : {
 
     },
     "The connection launcher exited with status %d. Run ~/.local/bin/assistant connect on the server to inspect its error; do not share the credential handoff." : {
@@ -1265,7 +1355,7 @@
     "This review includes decisions that require a newer client." : {
 
     },
-    "This saves your changes without restarting Assistant. If they need activation, you can apply them later from Connections." : {
+    "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready." : {
 
     },
     "This sends your message through this client, not email or Telegram. It can change where the assistant sends future replies in this conversation." : {
@@ -1277,6 +1367,9 @@
     "This server does not support writable Management API v2." : {
 
     },
+    "This server has no change history for settings saved before this update. Applying loads the currently saved configuration." : {
+
+    },
     "Title" : {
 
     },
@@ -1284,6 +1377,9 @@
 
     },
     "Tool calls" : {
+
+    },
+    "Transport" : {
 
     },
     "Type RESET to continue" : {
@@ -1376,13 +1472,13 @@
     "permission requests" : {
 
     },
+    "saved-settings activation review" : {
+
+    },
     "separate chats and reminder history" : {
 
     },
     "structured settings" : {
-
-    },
-    "•" : {
 
     }
   },

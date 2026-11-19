@@ -197,6 +197,7 @@ final class ModernizationTests: XCTestCase {
         let restored = OpenRouterCatalog(defaults: defaults, loader: loader)
         XCTAssertFalse(restored.automaticallyRefresh)
         XCTAssertEqual(restored.models(zdr: true, purpose: .chat).map(\.id), ["tools"])
+        XCTAssertEqual(restored.models(zdr: true, purpose: .speech).first?.supportedVoices, ["jane", "dan"])
         await loader.fail()
         await restored.refresh(zdr: true, force: true)
         XCTAssertNotNil(restored.errors[true])
@@ -217,6 +218,68 @@ final class ModernizationTests: XCTestCase {
         model.invalidateResources()
         await model.refreshAssistantName()
         XCTAssertEqual(model.assistantName, "Assistant")
+    }
+
+    func testCalendarDefaultsDoNotCountAsConfiguredAccounts() throws {
+        let configuration = try Wire.decoder().decode(FullConfiguration.self, from: Data("""
+        {"revision":"r","setup_complete":true,"instructions":"","setup_notice":"","settings":[
+          {"group":"calendar:google_2","key":"CLIENT_ID","label":"Client ID","value":"","secret":true,"boolean":false,"editable":true},
+          {"group":"calendar:google_2","key":"CLIENT_SECRET","label":"Client secret","value":"","secret":true,"boolean":false,"editable":true},
+          {"group":"calendar:google_2","key":"REFRESH_TOKEN","label":"Refresh token","value":"","secret":true,"boolean":false,"editable":true},
+          {"group":"calendar:google_2","key":"CALENDAR_ID","label":"Calendar ID","value":"primary","default":"primary",
+           "secret":false,"boolean":false,"editable":true}
+        ],"groups":[{"id":"calendar:google_2","title":"Google calendar 2","parent":"calendar","basic":true}]}
+        """.utf8))
+        let navigation = SettingsNavigation(configuration)
+        let account = try XCTUnwrap(navigation.group("calendar:google_2"))
+        XCTAssertFalse(navigation.configured(account))
+        XCTAssertFalse(navigation.configured(account, credentials: ["CLIENT_ID", "CLIENT_SECRET"]))
+        XCTAssertTrue(navigation.configured(account, credentials: ["CLIENT_ID", "CLIENT_SECRET", "REFRESH_TOKEN"]))
+    }
+
+    @MainActor
+    func testActivationReviewUsesServerStateAcrossRelaunch() async throws {
+        let api = ChatAPI()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let health = InstanceHealth(apiVersion: 2, instanceID: "activation", name: "Assistant",
+                                    capabilities: ["configuration.activation"], readOnly: false)
+        let model = ClientModel(defaults: defaults, api: api, health: health)
+        await api.setActivationPending(true)
+        try await model.refreshActivation()
+        XCTAssertEqual(model.activationState, .pending)
+        XCTAssertEqual(model.activationSummary?.changes.first?.label, "Assistant name")
+        model.references = [OperationReference(id: UUID(), instanceID: health.instanceID, key: UUID().uuidString,
+                                               action: "service.lifecycle", operationID: nil, submittedAt: Date())]
+        model.recordActivation(.unknown)
+        try await model.refreshActivation()
+        XCTAssertEqual(model.activationState, .unknown, "A settings read cannot resolve a missing operation receipt")
+        model.references = []
+        try await model.refreshActivation()
+        let restored = ClientModel(defaults: defaults, api: api, health: health)
+        XCTAssertEqual(restored.activationState, .pending)
+        await api.setActivationPending(false)
+        try await restored.refreshActivation()
+        XCTAssertEqual(restored.activationState, .active)
+        XCTAssertTrue(restored.activationSummary?.changes.isEmpty == true)
+        await api.setActivationPending(true)
+        await api.pauseNextRead("configuration/activation")
+        let staleRead = Task { try await restored.refreshActivation() }
+        while await !api.readIsPaused("configuration/activation") { await Task.yield() }
+        restored.recordActivation(.active)
+        await api.resumeRead("configuration/activation")
+        do {
+            try await staleRead.value
+            XCTFail("An older read must not overwrite a newer activation outcome")
+        } catch is CancellationError {}
+        XCTAssertEqual(restored.activationState, .active)
+        await restored.disconnect()
+        XCTAssertNil(restored.activationSummary)
+    }
+
+    func testRenderedProseKeepsParagraphsAndListsInOneSelectableText() {
+        let text = "# Heading\nFirst line.\nSecond **line**.\n\n- First item\n- Second item\n\nFinal paragraph."
+        let rendered = String(MarkdownContent.prose(text).characters)
+        XCTAssertEqual(rendered, "Heading\nFirst line.\nSecond line.\n\n• First item\n• Second item\n\nFinal paragraph.")
     }
 
     @MainActor
@@ -261,8 +324,10 @@ private actor CatalogFixture: OpenRouterCatalogLoading {
         return [
             OpenRouterModel(id: "tools", name: "Tools", architecture: .init(inputModalities: ["text"], outputModalities: ["text"]),
                             supportedParameters: ["tools"], endpoints: nil),
-            OpenRouterModel(id: "speech", name: "Speech", architecture: .init(inputModalities: ["text"], outputModalities: ["speech"]),
-                            supportedParameters: nil, endpoints: nil),
+            try Wire.decoder().decode(OpenRouterModel.self, from: Data("""
+            {"id":"speech","name":"Speech","architecture":{"input_modalities":["text"],"output_modalities":["speech"]},
+             "supported_voices":["jane","dan"]}
+            """.utf8)),
             OpenRouterModel(id: "decisions", name: "Decisions", architecture: .init(inputModalities: ["text"], outputModalities: ["decisions"]),
                             supportedParameters: nil, endpoints: nil)
         ]

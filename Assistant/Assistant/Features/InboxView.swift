@@ -375,6 +375,8 @@ struct InboxView: View {
                 }
                 Spacer()
                 Text(Self.timestamp(message.createdAt)).font(.caption2).foregroundStyle(Theme.secondary)
+                CopyTextButton(text: message.body, compact: true)
+                    .accessibilityIdentifier("copy-message-\(message.id)")
             }
             if let recipients = message.recipients, !recipients.isEmpty {
                 Text("To: \(recipients.joined(separator: ", "))")

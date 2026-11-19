@@ -263,6 +263,25 @@ struct FullConfiguration: Decodable, Sendable {
     var agentYaml: String?
     var agentYamlBackups: [String]?
     var instructionsConfigured: Bool?
+    var credentialNames: [String]?
+}
+
+/// A redacted saved value; credentials and instruction bodies never enter this review.
+struct SavedSettingChange: Decodable, Identifiable, Sendable {
+    let key: String
+    let label: String
+    let context: String?
+    let value: String
+    var id: String { key }
+}
+
+/// Server-persisted activation tracking works across client restarts and multiple Macs.
+struct ConfigurationActivation: Decodable, Sendable {
+    let revision: String
+    let tracked: Bool
+    let pending: Bool
+    let requiresRebuild: Bool
+    let changes: [SavedSettingChange]
 }
 
 /// Acknowledgments confirm delivery, not whether a human read the message.

@@ -8,6 +8,7 @@ actor PreviewManagementAPI: ManagementAPI {
     private var sent = false
     private var assistantName = "Assistant"
     private var assistantInstructions = "Be thoughtful, clear, and useful."
+    private var pendingSettings: [String: JSONValue] = [:]
     private let chatDetails: Bool
     private let offline: Bool
     private let liveChat: Bool
@@ -194,6 +195,12 @@ actor PreviewManagementAPI: ManagementAPI {
             value = .object(["credentials": .array([
                 .object(["name": .string("AGENT_LLM_OPENROUTER_API_KEY"), "status": .string("configured")])
             ])])
+        } else if resource == "configuration/activation" {
+            value = .object([
+                "revision": .string(String(repeating: "a", count: 64)), "tracked": .bool(true),
+                "pending": .bool(!pendingSettings.isEmpty), "requires_rebuild": .bool(false),
+                "changes": .array(pendingSettings.keys.sorted().compactMap { pendingSettings[$0] })
+            ])
         } else if resource == "configuration/instructions" {
             value = .object(["revision": .string(String(repeating: "a", count: 64)),
                              "instructions": .string(assistantInstructions)])
@@ -257,7 +264,7 @@ actor PreviewManagementAPI: ManagementAPI {
                                 "after": body?["values"]?["AGENT_IDENTITY_NAME"] ?? .string(assistantName)
                              ])])])
         } else if resource == "operations", let action = body?["operation"]?.string {
-            guard ["task.start", "task.reply", "task.delete", "configuration.save"].contains(action) else {
+            guard ["task.start", "task.reply", "task.delete", "configuration.save", "service.lifecycle"].contains(action) else {
                 throw ClientError.invalidResource
             }
             if action == "task.delete" { deleted = true }
@@ -267,9 +274,18 @@ actor PreviewManagementAPI: ManagementAPI {
             }
             if action == "configuration.save", let name = body?["values"]?["AGENT_IDENTITY_NAME"]?.string {
                 assistantName = name
+                pendingSettings["AGENT_IDENTITY_NAME"] = .object([
+                    "key": .string("AGENT_IDENTITY_NAME"), "label": .string("Assistant name"), "value": .string(name)
+                ])
             }
             if action == "configuration.save", let instructions = body?["instructions"]?.string {
                 assistantInstructions = instructions
+                pendingSettings["instructions"] = .object([
+                    "key": .string("instructions"), "label": .string("Assistant instructions"), "value": .string("Updated")
+                ])
+            }
+            if body?["apply"] == .bool(true) || action == "service.lifecycle" && body?["action"] == .string("apply") {
+                pendingSettings = [:]
             }
             value = .object([
                 "id": .string("fixture-operation"), "action": .string(action), "state": .string("succeeded"),

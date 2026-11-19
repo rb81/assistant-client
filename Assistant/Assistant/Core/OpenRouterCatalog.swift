@@ -8,6 +8,7 @@ struct OpenRouterModel: Codable, Identifiable, Sendable {
     let architecture: Architecture?
     let supportedParameters: [String]?
     let endpoints: [String]?
+    var supportedVoices: [String]? = nil
 
     /// Dedicated speech and decision models must not appear in ordinary chat fields.
     struct Architecture: Codable, Sendable {

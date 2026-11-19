@@ -9,6 +9,7 @@ struct SettingRow: View {
     var modelCatalog: OpenRouterCatalog? = nil
     var modelPurpose: ModelPurpose? = nil
     var zdrOnly = false
+    var choices: [String]? = nil
     @Binding var value: String
 
     var body: some View {
@@ -72,7 +73,7 @@ struct SettingRow: View {
         } else if let modelCatalog, let modelPurpose {
             ModelSelectionView(catalog: modelCatalog, purpose: modelPurpose, zdr: zdrOnly,
                                multiple: field.key == "AGENT_FUSION_ANALYSIS_MODELS", value: $value)
-        } else if let choices = field.choices {
+        } else if let choices = choices ?? field.choices {
             Picker(field.label, selection: $value) {
                 // Keep an unexpected saved value selectable rather than silently replacing it.
                 ForEach(choices.contains(value) ? choices : [value] + choices, id: \.self) { choice in

@@ -132,9 +132,13 @@ struct SettingsNavigation {
         return "\(parent.title) › \(group.title)"
     }
 
-    /// Whether an extra account has any saved value, so configured accounts stand out when collapsed.
-    func configured(_ group: SettingGroup) -> Bool {
-        fields(in: group.id).contains { !$0.value.isEmpty }
+    /// Defaults such as "primary" are not evidence of an OAuth account being set up.
+    func configured(_ group: SettingGroup, credentials: Set<String> = []) -> Bool {
+        let required = fields(in: group.id).filter(\.secret)
+        guard !required.isEmpty else {
+            return fields(in: group.id).contains { !$0.value.isEmpty && $0.value != $0.defaultText }
+        }
+        return required.allSatisfy { credentials.contains($0.key) }
     }
 
     /// Older servers send no group metadata; derive flat top-level pages from field groups.

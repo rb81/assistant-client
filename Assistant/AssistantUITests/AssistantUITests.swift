@@ -152,6 +152,36 @@ final class AssistantUITests: XCTestCase {
         XCTAssertTrue(destination.waitForExistence(timeout: 5))
         destination.click()
         XCTAssertTrue(app.textFields["IMAP server"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.otherElements["pending-settings-banner"].exists)
+        app.buttons["Review & Apply"].firstMatch.click()
+        XCTAssertTrue(app.staticTexts["Saved values awaiting activation"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Pane draft"].exists)
+        XCTAssertTrue(app.staticTexts["Assistant instructions"].exists)
+        capture(app, name: dark ? "Apply saved settings dark" : "Apply saved settings light")
+        let apply = app.buttons["Apply saved settings"]
+        waitUntilEnabled(apply)
+        apply.click()
+        let applied = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: app.otherElements["pending-settings-banner"])
+        XCTAssertEqual(XCTWaiter.wait(for: [applied], timeout: 10), .completed)
+    }
+
+    /// Both sides offer whole-message copy, including replies with fenced code.
+    @MainActor
+    func testEveryChatMessageOffersCopy() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        let thread = app.buttons["chat-thread-7"]
+        XCTAssertTrue(thread.waitForExistence(timeout: 10))
+        thread.click()
+        for id in ["request:client:1", "reply:client:2"] {
+            let copy = app.buttons["copy-message-\(id)"]
+            XCTAssertTrue(copy.waitForExistence(timeout: 10))
+            copy.click()
+            XCTAssertEqual(copy.label, "Copied")
+        }
     }
 
     @MainActor

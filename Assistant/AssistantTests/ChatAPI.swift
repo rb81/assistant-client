@@ -14,8 +14,10 @@ actor ChatAPI: ManagementAPI {
     private var readWaiters: [String: CheckedContinuation<Void, Never>] = [:]
     private var conversationRows: [Conversation]?
     private var assistantName = ""
+    private var activationPending = false
 
     func setAssistantName(_ name: String) { assistantName = name }
+    func setActivationPending(_ pending: Bool) { activationPending = pending }
 
     /// List updates model remote activity and unsorted merged pages.
     func setConversations(_ rows: [Conversation]) { conversationRows = rows }
@@ -82,6 +84,15 @@ actor ChatAPI: ManagementAPI {
             return try JSONEncoder().encode(JSONValue.object(["settings": .array([
                 .object(["key": .string("AGENT_IDENTITY_NAME"), "value": .string(assistantName)])
             ])]))
+        }
+        if resource == "configuration/activation" {
+            return try JSONEncoder().encode(JSONValue.object([
+                "revision": .string(String(repeating: "a", count: 64)), "tracked": .bool(true),
+                "pending": .bool(activationPending), "requires_rebuild": .bool(false),
+                "changes": .array(activationPending ? [.object([
+                    "key": .string("AGENT_IDENTITY_NAME"), "label": .string("Assistant name"), "value": .string("Juniper")
+                ])] : [])
+            ]))
         }
         if resource == "tasks/7/snapshot" {
             return Data("""

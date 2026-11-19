@@ -120,6 +120,22 @@ Never restore a raw-source fallback for older servers. Local App preferences
 do not enter server drafts. Pending/uncertain activation is separate from dirty
 state and survives relaunch.
 
+Negotiate `configuration.activation` for server-backed saved-change tracking.
+Its review contains redacted current saved values, not a live-container diff.
+Apply the exact reviewed revision using `service.lifecycle`; stale reviews must
+be reloaded. Pending activation has a global banner and its own review sheet,
+separate from unsaved edits and generic technical request confirmations.
+Missing receipts remain unresolved; inspecting settings alone never resolves a
+lost activation request. Known pending actions block Apply, and an unconfirmed
+action requires explicit acknowledgment before another application attempt.
+
+The server owns Basic/Advanced membership: credentials and ordinary connection
+setup are Basic; timeouts, polling intervals and other tuning are Advanced.
+Text-to-speech progressively reveals model/voice setup when enabled, using
+advertised cached voices when available without replacing an unsupported saved
+voice. Extra calendar accounts count saved credential completeness, never
+default calendar IDs or verified connectivity.
+
 Settings stay mounted after first opening, including drafts when visiting other
 destinations. Disconnecting still requires saving or explicitly discarding a draft.
 Source-free reads and side-effect-free
