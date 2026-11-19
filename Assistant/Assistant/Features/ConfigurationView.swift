@@ -31,6 +31,9 @@ struct ConfigurationView: View {
     @State private var expandedAccounts: Set<String> = []
     @State private var offerFirstChat = false
     @State private var showingFeedback = false
+    @State private var showingInstructionPreview = false
+    @State private var modelAccess: [String: String] = [:]
+    @State private var modelAccessLoaded = false
     @AppStorage("settings.showIdentifiers") private var showIdentifiers = false
 
     private var navigation: SettingsNavigation? { configuration.map(SettingsNavigation.init) }
@@ -46,6 +49,7 @@ struct ConfigurationView: View {
             actionFooter
         }
         .task { await load() }
+        .task(id: model.configurationVisit) { await checkForExternalChanges() }
         .task(id: page) { await loadPage() }
         .onChange(of: search) { if !search.isEmpty { searchFocus = nil } }
         .confirmationDialog(apply ? "Save and activate reviewed changes?" : "Save reviewed changes?",
@@ -53,7 +57,7 @@ struct ConfigurationView: View {
             Button(apply ? "Save & Apply" : "Save configuration") { Task { await save() } }
         } message: {
             Text(apply ? "Affected application services will be started or recreated. Active work may be interrupted. Enabled connections may begin processing messages." :
-                 "This saves your changes without restarting Assistant. If they need activation, you can apply them later from Connection & Support.")
+                 "This saves your changes without restarting Assistant. If they need activation, you can apply them later from Connections.")
         }
     }
 
@@ -71,13 +75,11 @@ struct ConfigurationView: View {
                 if scope == .app || scope == .assistant || !groups.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         Label(scope.title, systemImage: scope.symbol)
-                            .font(.headline)
-                            .foregroundStyle(Theme.ink)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 10).padding(.vertical, 7)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Theme.background, in: RoundedRectangle(cornerRadius: 8))
-                            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.outline))
                             .accessibilityAddTraits(.isHeader)
                             .accessibilityIdentifier("settings-category-\(scope.rawValue)")
                         if scope == .app {
@@ -128,7 +130,10 @@ struct ConfigurationView: View {
                 .background(Theme.panel, in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.outline))
                 .frame(maxWidth: 230)
-                Button("Reload", systemImage: "arrow.clockwise") { Task { await load() } }
+                Button("Reload", systemImage: "arrow.clockwise") {
+                    model.invalidateResources()
+                    Task { await load() }
+                }
                     .labelStyle(.iconOnly).help("Reload settings")
                     .buttonStyle(.borderless)
                     .disabled(model.configurationDirty || busy)
@@ -139,6 +144,11 @@ struct ConfigurationView: View {
                     .menuStyle(.borderlessButton).frame(width: 24).accessibilityLabel("Display options")
                 }
             }.padding(.horizontal, 20).frame(height: 44)
+            if page == .instructions && search.isEmpty {
+                instructionsEditor
+                    .padding(.horizontal, 20).padding(.bottom, 20)
+                    .accessibilityIdentifier("settings-detail")
+            } else {
             ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -172,6 +182,7 @@ struct ConfigurationView: View {
             .task(id: searchFocus) {
                 guard let searchFocus else { return }
                 reader.scrollTo(searchFocus, anchor: .center)
+            }
             }
             }
         }.frame(minWidth: Theme.settingsDetailMinimum, maxWidth: .infinity, maxHeight: .infinity)
@@ -300,11 +311,35 @@ struct ConfigurationView: View {
             ForEach(fields) { field in
                 SettingRow(field: field, showIdentifier: showIdentifiers,
                            credential: credentials.first { $0.name == field.key },
-                           credentialStatusLoaded: credentialStatusLoaded, value: binding(field))
+                           credentialStatusLoaded: credentialStatusLoaded,
+                           modelCatalog: model.modelCatalog, modelPurpose: modelPurpose(field),
+                           zdrOnly: zdrOnly(field), value: binding(field))
+                    .disabled(ModelPurpose.forSetting(field.key) != nil && !modelAccessLoaded)
                     .id(field.key)
                 if field.id != fields.last?.id { Divider() }
             }
         }
+    }
+
+    private func effectiveValue(_ key: String) -> String {
+        values[key] ?? loadedFields[key]?.value ?? modelAccess[key] ?? ""
+    }
+
+    private func modelPurpose(_ field: SettingField) -> ModelPurpose? {
+        guard let purpose = ModelPurpose.forSetting(field.key) else { return nil }
+        if field.key == "AGENT_TTS_MODEL" || field.key.hasPrefix("AGENT_FUSION_") { return purpose }
+        if field.key == "AGENT_SECURITY_DECISION_MODEL_MODEL" {
+            let provider = effectiveValue("AGENT_SECURITY_DECISION_MODEL_PROVIDER")
+            return provider == "openrouter" ? purpose : nil
+        }
+        guard let url = URL(string: effectiveValue("AGENT_LLM_BASE_URL")),
+              url.scheme?.lowercased() == "https", url.host?.lowercased() == "openrouter.ai" else { return nil }
+        return purpose
+    }
+
+    private func zdrOnly(_ field: SettingField) -> Bool {
+        effectiveValue("AGENT_LLM_ZDR_ONLY") == "true" ||
+            (field.key == "AGENT_TTS_MODEL" && effectiveValue("AGENT_TTS_ZDR_ONLY") == "true")
     }
 
     /// Extra accounts stay collapsed so one provider's spare slots do not bury the rest of the page.
@@ -386,15 +421,32 @@ struct ConfigurationView: View {
         VStack(alignment: .leading, spacing: 16) {
             pageIntro(String(localized: "Instructions"),
                       help: String(localized: "Tell Assistant what to keep in mind across all your conversations."))
-            Text("For example, say how you prefer summaries, what to ask before doing, or what to leave out. Keep one-off requests in Chats.")
-                .font(.callout).foregroundStyle(Theme.secondary)
-            TextEditor(text: $instructions).frame(minHeight: 260)
-                .disabled(!instructionsLoaded)
-                .font(.body).padding(10)
-                .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
-                .onChange(of: instructions) { invalidatePreview() }
-                .accessibilityLabel("Assistant instructions")
+            HStack {
+                Text("Markdown formatting is supported. Changes are saved only after review.")
+                    .font(.callout).foregroundStyle(Theme.secondary)
+                Spacer()
+                Toggle("Preview", isOn: $showingInstructionPreview).toggleStyle(.switch).controlSize(.small)
+            }
+            Group {
+                if showingInstructionPreview {
+                    ScrollView {
+                        MarkdownContent(text: instructions).padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    MarkdownEditor(text: $instructions)
+                        .disabled(!instructionsLoaded || busy)
+                        .onChange(of: instructions) { invalidatePreview() }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline))
+            if let preview {
+                ScrollView { changeReview(preview) }.frame(maxHeight: 150)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder private var setupAcknowledgment: some View {
@@ -410,6 +462,21 @@ struct ConfigurationView: View {
     }
 
     // MARK: - Draft
+
+    /// Reopening Settings keeps its contents visible; only a changed server revision needs a reload.
+    private func checkForExternalChanges() async {
+        guard let configuration, !busy else { return }
+        do {
+            let latest = try await model.cachedRead("configuration/catalog")
+            guard latest["revision"]?.string != configuration.revision else { return }
+            guard !model.configurationDirty else {
+                error = String(localized: "Settings changed on the server. Your draft is preserved; discard it and reload before saving.")
+                return
+            }
+            model.invalidateResources()
+            await load(catalog: latest)
+        } catch { self.error = error.presentableMessage ?? self.error }
+    }
 
     /// Only changed fields enter the immutable reviewed payload.
     private func binding(_ field: SettingField) -> Binding<String> {
@@ -430,16 +497,21 @@ struct ConfigurationView: View {
     }
 
     /// A successful reload is the only point that clears a saved draft.
-    private func load() async {
+    private func load(catalog: JSONValue? = nil) async {
+        guard catalog == nil || !model.configurationDirty else { return }
         loadGeneration = UUID()
         loadingGroups = []; instructionsLoading = false
+        modelAccessLoaded = false
+        modelAccess = [:]
         busy = true
         defer { busy = false }
         do {
             guard model.health?.capabilities.contains("configuration.structured") == true else {
                 throw ClientError.serverOutdated(String(localized: "structured settings"))
             }
-            let result = try await model.read("configuration/catalog")
+            let result: JSONValue
+            if let catalog { result = catalog }
+            else { result = try await model.cachedRead("configuration/catalog") }
             configuration = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(result))
             model.setupRequired = configuration?.setupComplete == false
             if model.setupRequired, values.isEmpty, let first = navigation?.pages(in: .models).first {
@@ -457,14 +529,16 @@ struct ConfigurationView: View {
             values = [:]; acknowledge = false; preview = nil; reviewedPayload = nil
             model.configurationDirty = false
             error = nil
-            await loadPage()
+            async let pageLoad: () = loadPage()
+            async let credentialsLoad: () = loadCredentials()
+            async let modelLoad: () = loadModelAccess()
+            _ = await (pageLoad, credentialsLoad, modelLoad)
         } catch { self.error = error.presentableMessage ?? self.error }
-        await loadCredentials()
     }
 
     private func loadCredentials() async {
         do {
-            let result = try await model.read("credentials")
+            let result = try await model.cachedRead("credentials")
             credentials = try Wire.decoder().decode(CredentialInventory.self, from: JSONEncoder().encode(result)).credentials
             credentialStatusLoaded = true
             credentialError = nil
@@ -472,6 +546,22 @@ struct ConfigurationView: View {
             credentialStatusLoaded = false
             credentialError = error.presentableMessage.map { String(localized: "Can’t check saved credentials right now. \($0)") }
         }
+    }
+
+    private func loadModelAccess() async {
+        do {
+            let result = try await model.cachedRead("configuration/settings?group=models")
+            guard result["revision"]?.string == configuration?.revision else {
+                throw ClientError.operationFailed(String(localized: "Settings changed on the server. Reload before editing."))
+            }
+            guard let fields = result["settings"]?.array else { throw ClientError.malformedResponse }
+            modelAccess = Dictionary(uniqueKeysWithValues: fields.compactMap { field in
+                guard let key = field["key"]?.string, let value = field["value"]?.string,
+                      field["secret"] != .bool(true) else { return nil }
+                return (key, value)
+            })
+            modelAccessLoaded = true
+        } catch { self.error = error.presentableMessage ?? self.error }
     }
 
     /// Lazy page reads retain the catalog revision, so external edits never silently merge with a draft.
@@ -485,7 +575,7 @@ struct ConfigurationView: View {
                 guard !instructionsLoaded, !instructionsLoading else { return }
                 instructionsLoading = true
                 defer { if loadGeneration == current { instructionsLoading = false } }
-                let result = try await model.read("configuration/instructions")
+                let result = try await model.cachedRead("configuration/instructions")
                 guard loadGeneration == current, !Task.isCancelled else { return }
                 guard result["revision"]?.string == configuration.revision,
                       let text = result["instructions"]?.string else { throw ClientError.operationFailed(
@@ -496,7 +586,7 @@ struct ConfigurationView: View {
                 defer { if loadGeneration == current { loadingGroups.remove(id) } }
                 var query = URLComponents()
                 query.queryItems = [URLQueryItem(name: "group", value: id)]
-                let result = try await model.read("configuration/settings?\(query.percentEncodedQuery ?? "")")
+                let result = try await model.cachedRead("configuration/settings?\(query.percentEncodedQuery ?? "")")
                 let loaded = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(result))
                 guard loadGeneration == current, !Task.isCancelled else { return }
                 guard loaded.revision == configuration.revision else { throw ClientError.operationFailed(
@@ -540,13 +630,14 @@ struct ConfigurationView: View {
             _ = try await model.perform(.object(payload))
             model.recordActivation(apply ? .active : .pending)
             notice = apply ? String(localized: "Configuration saved and application services activated.") :
-                String(localized: "Saved. Apply changes from Connection & Support when you are ready.")
+                String(localized: "Saved. Apply changes from Connections when you are ready.")
             await load()
+            await model.refreshAssistantName()
             offerFirstChat = starting
         } catch {
             model.recordActivation(.unknown)
             self.error = error.presentableMessage ?? self.error
-            notice = String(localized: "Some changes may have been saved or applied. Check operation history in Connection & Support before retrying.")
+            notice = String(localized: "Some changes may have been saved or applied. Check Activity > Operation History before retrying.")
             preview = nil; reviewedPayload = nil
         }
     }

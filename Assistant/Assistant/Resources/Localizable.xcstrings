@@ -11,6 +11,16 @@
         }
       }
     },
+    "%@ · Revision %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · Revision %2$@"
+          }
+        }
+      }
+    },
     "%@ › %@" : {
       "localizations" : {
         "en" : {
@@ -47,10 +57,10 @@
         }
       }
     },
-    "•" : {
+    "A fresh conversation" : {
 
     },
-    "A fresh conversation" : {
+    "A saved model is not in this catalog or does not meet this field’s requirements. Choose an eligible model before saving." : {
 
     },
     "About %@" : {
@@ -75,13 +85,25 @@
     "Accepted; final result not confirmed" : {
 
     },
-    "Actions awaiting confirmation" : {
-
-    },
     "Activation needs checking" : {
 
     },
     "Activation outcome needs checking. Inspect operation history before retrying." : {
+
+    },
+    "Activity" : {
+
+    },
+    "Activity (%lld)" : {
+
+    },
+    "Activity section" : {
+
+    },
+    "Add preferences" : {
+
+    },
+    "Add skill" : {
 
     },
     "Additional accounts" : {
@@ -111,6 +133,9 @@
     "Allowed values" : {
 
     },
+    "An unconfirmed submission is not an approval request. Assistant never automatically repeats an action whose outcome is unknown." : {
+
+    },
     "Application services" : {
 
     },
@@ -121,9 +146,6 @@
 
     },
     "Approval requests" : {
-
-    },
-    "Approvals" : {
 
     },
     "Approve" : {
@@ -141,13 +163,10 @@
     "Assistant client" : {
 
     },
-    "Assistant has an update" : {
-
-    },
-    "Assistant hasn’t confirmed whether these actions finished. Check the history before trying again." : {
-
-    },
     "Assistant instructions" : {
+
+    },
+    "Assistant is asking permission to take these specific actions. Review each action before allowing it." : {
 
     },
     "Assistant keeps related work organized automatically." : {
@@ -174,6 +193,12 @@
     "Browse Assistant’s workspace. Shared files stay separate from chat task deletion." : {
 
     },
+    "Cancel" : {
+
+    },
+    "Cancel task" : {
+
+    },
     "Can’t check Assistant’s services right now." : {
 
     },
@@ -183,16 +208,13 @@
     "Can’t refresh service status. The results below are from the last successful check." : {
 
     },
-    "Cancel" : {
-
-    },
-    "Cancel task" : {
-
-    },
-    "Change a workspace item" : {
+    "Catalog eligibility does not guarantee account access or current endpoint availability." : {
 
     },
     "Change Assistant service state" : {
+
+    },
+    "Change a workspace item" : {
 
     },
     "Channel" : {
@@ -201,13 +223,19 @@
     "Chats" : {
 
     },
+    "Check operation history" : {
+
+    },
     "Check that Docker is running on the computer that hosts Assistant, then retry." : {
 
     },
-    "Check whether Assistant is ready and get help when something stops working." : {
+    "Checking for updates" : {
 
     },
-    "Checking for updates" : {
+    "Choose OpenRouter model" : {
+
+    },
+    "Choose a model…" : {
 
     },
     "Clear cached conversations from this Mac?" : {
@@ -237,13 +265,13 @@
     "Connect" : {
 
     },
-    "Connect to an instance first." : {
-
-    },
     "Connect to Assistant" : {
 
     },
     "Connect to Assistant through SSH, or use an installation on this Mac." : {
+
+    },
+    "Connect to an instance first." : {
 
     },
     "Connect to the installation that created this update before opening it." : {
@@ -255,13 +283,16 @@
     "Connecting" : {
 
     },
-    "Connection & Support" : {
+    "Connection details" : {
 
     },
     "Connection failed" : {
 
     },
     "Connection name" : {
+
+    },
+    "Connection status" : {
 
     },
     "Connections" : {
@@ -318,6 +349,12 @@
     "Delete selected chat task data" : {
 
     },
+    "Delete skill" : {
+
+    },
+    "Delete skill…" : {
+
+    },
     "Delete task data" : {
 
     },
@@ -325,6 +362,9 @@
 
     },
     "Delete task data?" : {
+
+    },
+    "Delete this skill?" : {
 
     },
     "Deleted task. Conversation and shared data are preserved. This chat is read-only." : {
@@ -339,10 +379,16 @@
     "Deny" : {
 
     },
+    "Description" : {
+
+    },
+    "Discard and disconnect" : {
+
+    },
     "Discard and quit" : {
 
     },
-    "Discard changes" : {
+    "Discard unsaved configuration changes and disconnect?" : {
 
     },
     "Discard unsaved configuration changes?" : {
@@ -375,7 +421,10 @@
     "Earlier tool calls in this conversation are not shown." : {
 
     },
-    "Earlier updates" : {
+    "Edit preferences" : {
+
+    },
+    "Edit skill" : {
 
     },
     "Email" : {
@@ -399,9 +448,6 @@
     "Find a setting" : {
 
     },
-    "For example, say how you prefer summaries, what to ask before doing, or what to leave out. Keep one-off requests in Chats." : {
-
-    },
     "General" : {
 
     },
@@ -415,6 +461,12 @@
 
     },
     "Identifier" : {
+
+    },
+    "Include what the Assistant should do and when. Preferences load automatically with this skill for admin requests." : {
+
+    },
+    "Inspect shipped workflows or publish custom guidance and preference overlays." : {
 
     },
     "Installation on this Mac" : {
@@ -435,13 +487,13 @@
     "Last checked %@" : {
 
     },
+    "Last refreshed %@" : {
+
+    },
     "Latest" : {
 
     },
     "Leave blank to keep the saved value" : {
-
-    },
-    "live updates" : {
 
     },
     "Live updates are on" : {
@@ -456,6 +508,9 @@
     "Load earlier messages" : {
 
     },
+    "Load earlier notices" : {
+
+    },
     "Load more" : {
 
     },
@@ -468,6 +523,12 @@
     "Loading conversation…" : {
 
     },
+    "Loading models…" : {
+
+    },
+    "Locked" : {
+
+    },
     "Logs · %@" : {
 
     },
@@ -477,13 +538,31 @@
     "Management request failed with HTTP %lld. Check authentication, saved configuration, and server health." : {
 
     },
+    "Mark as Read" : {
+
+    },
+    "Mark as Unread" : {
+
+    },
+    "Markdown formatting is supported. Changes are saved only after review." : {
+
+    },
     "Message Assistant" : {
+
+    },
+    "Model lists are cached on this Mac. Automatic refresh checks once a week while the app is running; manual refresh works even when it’s turned off. This does not change server settings." : {
 
     },
     "Models & Voice" : {
 
     },
+    "Most recent successful network reads, including tunnel and server time. Cached navigation does not make another request." : {
+
+    },
     "Naming workstream…" : {
+
+    },
+    "Needs Attention" : {
 
     },
     "Needs attention. View logs for details." : {
@@ -501,7 +580,16 @@
     "New folder name" : {
 
     },
+    "New installation notice" : {
+
+    },
     "New profile" : {
+
+    },
+    "New replies and installation notices will appear here." : {
+
+    },
+    "New reply from %@" : {
 
     },
     "Next" : {
@@ -522,7 +610,19 @@
     "No details were recorded." : {
 
     },
+    "No eligible models match." : {
+
+    },
+    "No matching skills." : {
+
+    },
     "No messages in this conversation yet." : {
+
+    },
+    "No operations yet" : {
+
+    },
+    "No preferences set." : {
 
     },
     "No receipt from the server" : {
@@ -534,6 +634,9 @@
     "No reminders yet. Ask Assistant in chat to schedule one." : {
 
     },
+    "No retained receipt matches this submission. This does not prove that the action failed; check the affected item before retrying." : {
+
+    },
     "No saved key" : {
 
     },
@@ -543,13 +646,7 @@
     "No settings match “%@”." : {
 
     },
-    "No updates to show." : {
-
-    },
     "Not checked" : {
-
-    },
-    "Not confirmed — inspect operation history before retrying" : {
 
     },
     "Not installed yet." : {
@@ -567,9 +664,6 @@
     "Nothing needs your approval on this page." : {
 
     },
-    "Notices from your Assistant installation." : {
-
-    },
     "Notification could not be saved or delivered: %@" : {
 
     },
@@ -580,6 +674,15 @@
 
     },
     "On this Mac" : {
+
+    },
+    "Open conversation" : {
+
+    },
+    "OpenRouter model lists" : {
+
+    },
+    "OpenRouter models" : {
 
     },
     "Operation %@ ended as %@. Inspect current state before retrying." : {
@@ -593,6 +696,9 @@
       }
     },
     "Operation %@ is still pending. Inspect Operations before retrying." : {
+
+    },
+    "Operation History" : {
 
     },
     "Operation history" : {
@@ -610,16 +716,43 @@
     "Pause" : {
 
     },
+    "Permission requests" : {
+
+    },
     "Play" : {
 
     },
     "Playback position" : {
 
     },
+    "Preference instructions" : {
+
+    },
+    "Preferences" : {
+
+    },
+    "Preferences for %@" : {
+
+    },
+    "Preview" : {
+
+    },
     "Previous" : {
 
     },
     "Private alerts while Assistant is running. Message bodies are never included. In-app updates remain available without permission." : {
+
+    },
+    "Publish preferences" : {
+
+    },
+    "Publish preferences?" : {
+
+    },
+    "Publish skill" : {
+
+    },
+    "Publish this skill revision?" : {
 
     },
     "Quit Assistant" : {
@@ -637,6 +770,18 @@
     "Refresh" : {
 
     },
+    "Refresh ZDR model list" : {
+
+    },
+    "Refresh automatically each week" : {
+
+    },
+    "Refresh models" : {
+
+    },
+    "Refresh to load the model list." : {
+
+    },
     "Reload" : {
 
     },
@@ -652,6 +797,15 @@
     "Removal pending" : {
 
     },
+    "Remove %@ from the active skill catalog?" : {
+
+    },
+    "Remove preferences" : {
+
+    },
+    "Remove preferences?" : {
+
+    },
     "Removes cached conversations and tool details from this Mac. Server history is preserved." : {
 
     },
@@ -661,10 +815,19 @@
     "Replies and completed tasks" : {
 
     },
+    "Replies and notices" : {
+
+    },
+    "Replies, permission requests, and operation history" : {
+
+    },
     "Reply destination: this Assistant client" : {
 
     },
     "Reply to this conversation" : {
+
+    },
+    "Request performance" : {
 
     },
     "Reset Assistant data" : {
@@ -697,19 +860,10 @@
     "Review" : {
 
     },
-    "Review approvals" : {
-
-    },
-    "Review approvals (%lld)" : {
+    "Review & publish" : {
 
     },
     "Review changes" : {
-
-    },
-    "Review operation history" : {
-
-    },
-    "Review what Assistant needs before it can continue." : {
 
     },
     "Review your changes" : {
@@ -727,184 +881,16 @@
     "Running. Health has not been verified." : {
 
     },
-    "Safety & Approvals" : {
-
-    },
-    "Save & Apply" : {
-
-    },
-    "Save & Start" : {
-
-    },
-    "Save and activate reviewed changes?" : {
-
-    },
-    "Save changes" : {
-
-    },
-    "Save configuration" : {
-
-    },
-    "Save or discard the configuration draft before disconnecting." : {
-
-    },
-    "Save or discard your settings draft before opening this update." : {
-
-    },
-    "Save reviewed changes?" : {
-
-    },
-    "Save settings" : {
-
-    },
-    "Saved · Apply to activate" : {
-
-    },
-    "Saved · Needs applying" : {
-
-    },
-    "Saved and active" : {
-
-    },
-    "Saved connection" : {
-
-    },
-    "Saved connection metadata could not be read: %@" : {
-
-    },
-    "Saved conversations could not be read: %@" : {
-
-    },
-    "Saved key status unavailable" : {
-
-    },
-    "Saved service statuses could not be read: %@" : {
-
-    },
-    "Saved settings need applying. Review and apply when you are ready." : {
-
-    },
-    "Saved. Apply changes from Connection & Support when you are ready." : {
-
-    },
-    "Scheduled reminder" : {
-
-    },
-    "Scheduled reminders" : {
-
-    },
-    "Scheduled run" : {
-
-    },
-    "Scheduled runs are read-only" : {
-
-    },
-    "Scheduled runs will appear here." : {
-
-    },
-    "Search conversations" : {
-
-    },
-    "Search reminder runs" : {
-
-    },
-    "Search results" : {
-
-    },
-    "See what Assistant did and where it sent the result." : {
-
-    },
-    "See when Assistant is due to run your reminders." : {
-
-    },
-    "Select a reminder" : {
-
-    },
-    "Select a section in the sidebar." : {
-
-    },
-    "Send" : {
-
-    },
-    "Send a chat reply" : {
-
-    },
-    "Sending" : {
-
-    },
-    "Sending…" : {
-
-    },
-    "Sent — waiting for transcript" : {
-
-    },
-    "Sent externally" : {
-
-    },
-    "separate chats and reminder history" : {
-
-    },
-    "Server updates are temporarily unavailable." : {
-
-    },
-    "Service actions" : {
-
-    },
-    "Services" : {
-
-    },
-    "Settings" : {
-
-    },
-    "Settings changed on the server. Save or discard your draft, then reload." : {
-
-    },
-    "Settings feedback" : {
-
-    },
-    "Settings sections" : {
-
-    },
-    "Setup completed successfully." : {
-
-    },
-    "Show Assistant" : {
-
-    },
-    "Show identifiers" : {
-
-    },
-    "Show macOS notifications" : {
-
-    },
-    "Show run instructions" : {
-
-    },
-    "Show tool calls" : {
-
-    },
-    "Some changes may have been saved or applied. Check operation history in Connection & Support before retrying." : {
-
-    },
-    "Some deliveries were not acknowledged. They will be offered again." : {
-
-    },
-    "Something needs your attention." : {
-
-    },
-    "Source changes" : {
-
-    },
     "SSH alias or user@host" : {
 
     },
     "SSH and the launcher work, but the management service is stopped. Start the server with assistant server start." : {
 
     },
-    "SSH connected, but ~/.local/bin/assistant is missing on the server. Install the Assistant server launcher for this SSH account." : {
+    "SSH connected, but this account cannot execute ~/.local/bin/assistant. Check the installed launcher's permissions." : {
 
     },
-    "SSH connected, but this account cannot execute ~/.local/bin/assistant. Check the installed launcher's permissions." : {
+    "SSH connected, but ~/.local/bin/assistant is missing on the server. Install the Assistant server launcher for this SSH account." : {
 
     },
     "SSH could not reach this host and port. Check the server, network, and SSH port." : {
@@ -931,13 +917,202 @@
     "SSH port" : {
 
     },
+    "Safety & Approvals" : {
+
+    },
+    "Save & Apply" : {
+
+    },
+    "Save & Start" : {
+
+    },
+    "Save and activate reviewed changes?" : {
+
+    },
+    "Save changes" : {
+
+    },
+    "Save configuration" : {
+
+    },
+    "Save or discard the configuration draft before disconnecting." : {
+
+    },
+    "Save or discard your Settings draft before resetting." : {
+
+    },
+    "Save reviewed changes?" : {
+
+    },
+    "Save settings" : {
+
+    },
+    "Saved and active" : {
+
+    },
+    "Saved connection" : {
+
+    },
+    "Saved connection metadata could not be read: %@" : {
+
+    },
+    "Saved conversations could not be read: %@" : {
+
+    },
+    "Saved key status unavailable" : {
+
+    },
+    "Saved service statuses could not be read: %@" : {
+
+    },
+    "Saved settings need applying. Review and apply when you are ready." : {
+
+    },
+    "Saved · Apply to activate" : {
+
+    },
+    "Saved · Needs applying" : {
+
+    },
+    "Saved. Apply changes from Connections when you are ready." : {
+
+    },
+    "Scheduled reminder" : {
+
+    },
+    "Scheduled reminders" : {
+
+    },
+    "Scheduled run" : {
+
+    },
+    "Scheduled runs are read-only" : {
+
+    },
+    "Scheduled runs will appear here." : {
+
+    },
+    "Search conversations" : {
+
+    },
+    "Search models" : {
+
+    },
+    "Search reminder runs" : {
+
+    },
+    "Search results" : {
+
+    },
+    "Search skills" : {
+
+    },
+    "See what Assistant did and where it sent the result." : {
+
+    },
+    "See when Assistant is due to run your reminders." : {
+
+    },
+    "Select a reminder" : {
+
+    },
+    "Select a reply to open its conversation. Permission requests are in Needs Attention." : {
+
+    },
+    "Select a section in the sidebar." : {
+
+    },
+    "Send" : {
+
+    },
+    "Send a chat reply" : {
+
+    },
+    "Sending…" : {
+
+    },
+    "Sent externally" : {
+
+    },
+    "Server receipts for actions you take will appear here." : {
+
+    },
+    "Server updates are temporarily unavailable." : {
+
+    },
+    "Service actions" : {
+
+    },
+    "Services" : {
+
+    },
+    "Settings" : {
+
+    },
+    "Settings changed on the server. Reload before editing." : {
+
+    },
+    "Settings changed on the server. Save or discard your draft, then reload." : {
+
+    },
+    "Settings changed on the server. Your draft is preserved; discard it and reload before saving." : {
+
+    },
+    "Settings feedback" : {
+
+    },
+    "Settings sections" : {
+
+    },
+    "Setup completed successfully." : {
+
+    },
+    "Show Assistant" : {
+
+    },
+    "Show identifiers" : {
+
+    },
+    "Show macOS notifications" : {
+
+    },
+    "Show run instructions" : {
+
+    },
+    "Show tool calls" : {
+
+    },
+    "Skill ID" : {
+
+    },
+    "Skill instructions" : {
+
+    },
+    "Skills" : {
+
+    },
+    "Some action outcomes are unconfirmed" : {
+
+    },
+    "Some changes may have been saved or applied. Check Activity > Operation History before retrying." : {
+
+    },
+    "Some deliveries were not acknowledged. They will be offered again." : {
+
+    },
+    "Something needs your attention." : {
+
+    },
+    "Source changes" : {
+
+    },
     "Start" : {
 
     },
-    "Start a chat" : {
+    "Start Assistant" : {
 
     },
-    "Start Assistant" : {
+    "Start a chat" : {
 
     },
     "Start deep research" : {
@@ -959,9 +1134,6 @@
 
     },
     "Stop Assistant" : {
-
-    },
-    "structured settings" : {
 
     },
     "Submission details" : {
@@ -1018,7 +1190,16 @@
     "The installed launcher returned an invalid connection handoff." : {
 
     },
+    "The locked skill will not change." : {
+
+    },
     "The response exceeded the client display limit." : {
+
+    },
+    "The saved model list could not be read. Refresh it to try again." : {
+
+    },
+    "The send outcome is unconfirmed. Your draft is preserved. Check Activity > Operation History and the conversation before sending it again." : {
 
     },
     "The server is busy with another management task. Try again in a moment." : {
@@ -1037,6 +1218,9 @@
 
     },
     "The server's SSH host key has changed. Verify the server's identity in Terminal; this client will not bypass host-key checking." : {
+
+    },
+    "The server’s receipt has expired. Check the affected item before taking any further action." : {
 
     },
     "These are connection settings, not a verified connection. Saving without applying does not start message processing." : {
@@ -1060,7 +1244,13 @@
     "This folder is empty." : {
 
     },
+    "This guidance can be loaded in future Assistant tasks. Do not include secrets." : {
+
+    },
     "This image format cannot be displayed. Download the file to open it in another app." : {
+
+    },
+    "This is not a permission request. Check the server’s receipts before trying the action again." : {
 
     },
     "This profile reached a different installation. Verify the server before creating a new profile." : {
@@ -1075,13 +1265,19 @@
     "This review includes decisions that require a newer client." : {
 
     },
-    "This saves your changes without restarting Assistant. If they need activation, you can apply them later from Connection & Support." : {
+    "This saves your changes without restarting Assistant. If they need activation, you can apply them later from Connections." : {
 
     },
     "This sends your message through this client, not email or Telegram. It can change where the assistant sends future replies in this conversation." : {
 
     },
+    "This server does not support skill management." : {
+
+    },
     "This server does not support writable Management API v2." : {
+
+    },
+    "Title" : {
 
     },
     "To: %@" : {
@@ -1108,9 +1304,6 @@
     "Updates" : {
 
     },
-    "Updates (%lld)" : {
-
-    },
     "Upload %@" : {
 
     },
@@ -1123,6 +1316,9 @@
     "Uptime not reported by this server" : {
 
     },
+    "Use default / Not set" : {
+
+    },
     "Verify this destination with ssh in Terminal first. Unknown or changed host keys and interactive password prompts are not accepted." : {
 
     },
@@ -1133,6 +1329,9 @@
 
     },
     "View schedule" : {
+
+    },
+    "Wait for settings activation to finish before opening this update." : {
 
     },
     "What shall we work on?" : {
@@ -1159,110 +1358,31 @@
     "Your platform. One connection." : {
 
     },
-    "%@ · Revision %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · Revision %2$@"
-          }
-        }
-      }
-    },
-    "Add preferences" : {
+    "Your server connection, service health, and diagnostics." : {
 
     },
-    "Add skill" : {
+    "You’re all caught up" : {
 
     },
-    "Delete skill" : {
+    "ZDR-compatible models" : {
 
     },
-    "Delete skill…" : {
+    "Zero Data Retention endpoints only" : {
 
     },
-    "Delete this skill?" : {
+    "live updates" : {
 
     },
-    "Description" : {
+    "permission requests" : {
 
     },
-    "Edit skill" : {
+    "separate chats and reminder history" : {
 
     },
-    "Inspect shipped workflows or publish custom guidance and preference overlays." : {
+    "structured settings" : {
 
     },
-    "Locked" : {
-
-    },
-    "No matching skills." : {
-
-    },
-    "Preferences for %@" : {
-
-    },
-    "Publish skill" : {
-
-    },
-    "Publish this skill revision?" : {
-
-    },
-    "Remove %@ from the active skill catalog?" : {
-
-    },
-    "Review & publish" : {
-
-    },
-    "Search skills" : {
-
-    },
-    "Skill ID" : {
-
-    },
-    "Skill instructions" : {
-
-    },
-    "Skills" : {
-
-    },
-    "This guidance can be loaded in future Assistant tasks. Do not include secrets." : {
-
-    },
-    "This server does not support skill management." : {
-
-    },
-    "Title" : {
-
-    },
-    "Edit preferences" : {
-
-    },
-    "Include what the Assistant should do and when. Preferences load automatically with this skill for admin requests." : {
-
-    },
-    "No preferences set." : {
-
-    },
-    "Preference instructions" : {
-
-    },
-    "Preferences" : {
-
-    },
-    "Publish preferences" : {
-
-    },
-    "Publish preferences?" : {
-
-    },
-    "Remove preferences" : {
-
-    },
-    "Remove preferences?" : {
-
-    },
-    "The locked skill will not change." : {
+    "•" : {
 
     }
   },

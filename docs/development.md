@@ -103,7 +103,7 @@ Closing the client never stops services.
 
 Unread markers are local to this Mac and separate from delivery acknowledgments.
 Service inventories are cached per installation and refreshed every ten seconds
-while Connection & Support is open; cached statuses are not proof of current health.
+while Connections is open; cached statuses are not proof of current health.
 Attachment downloads require the server to return a current SHA-256 digest,
 including for project files whose tracking metadata has no digest.
 
@@ -119,6 +119,22 @@ effective values by owning page. Standing instructions load separately.
 Never restore a raw-source fallback for older servers. Local App preferences
 do not enter server drafts. Pending/uncertain activation is separate from dirty
 state and survives relaunch.
+
+Settings stay mounted after first opening, including drafts when visiting other
+destinations. Disconnecting still requires saving or explicitly discarding a draft.
+Source-free reads and side-effect-free
+skill queries coalesce in flight and use a bounded, 60-second session cache;
+reopening Settings rechecks expired catalog metadata without clearing drafts.
+Disconnects, explicit reloads, and relevant confirmed mutations invalidate the
+cache. Permission requests, update notices, and operation receipts live in the
+global Activity sheet. Negotiate `operations.lookup` to recover missing receipts
+by their persisted submission key; missing/expired results never authorize replay.
+
+OpenRouter's public HTTPS model catalog is cached separately for full/ZDR policy.
+The weekly-refresh switch and manual refresh are local preferences, not server
+configuration. No installation or provider credentials enter discovery. Public
+eligibility cannot guarantee account-specific access. The server independently
+enforces `provider.zdr=true` on OpenRouter requests when global ZDR is enabled.
 
 Remote Markdown uses native text views: HTML/scripts and remote images are not
 executed or loaded. Diagnostics remain selectable technical details, not the

@@ -271,6 +271,7 @@ final class ConversationModel {
     var sending = false
     var pendingMessage: ChatMessage?
     var pendingUnconfirmed = false
+    var unconfirmedSend: Bool { pendingUnconfirmed && pendingThread == selectedThread }
     private var pendingThread: String?
     private var pendingRequestID: Int?
     var loadingList = false
@@ -284,6 +285,7 @@ final class ConversationModel {
     private var cache: [String: CachedTranscript] = [:]
     private var savedConversations: [String: Conversation] = [:]
     private var readVersions: [String: String] = [:]
+    private var manuallyUnreadSelection: String?
     private let defaults: UserDefaults
     private var cacheKey: String?
     private var generation = UUID()
@@ -350,8 +352,22 @@ final class ConversationModel {
     /// Called only once the selected transcript is rendered, never when a list row is clicked.
     func markRendered() {
         guard transcriptLoaded, let selected, let version = renderedVersion else { return }
+        guard manuallyUnreadSelection != selected.threadID else { return }
         guard readVersions[selected.threadID] != version else { return }
         readVersions[selected.threadID] = version
+        do { try persistCache() }
+        catch { self.error = error.presentableMessage }
+    }
+
+    /// Explicit local read controls never acknowledge a delivery or change server conversation data.
+    func setRead(_ read: Bool, conversation: Conversation) {
+        if read {
+            readVersions[conversation.threadID] = Self.readVersion(conversation)
+            if manuallyUnreadSelection == conversation.threadID { manuallyUnreadSelection = nil }
+        } else {
+            readVersions.removeValue(forKey: conversation.threadID)
+            if selectedThread == conversation.threadID { manuallyUnreadSelection = conversation.threadID }
+        }
         do { try persistCache() }
         catch { self.error = error.presentableMessage }
     }
@@ -368,8 +384,12 @@ final class ConversationModel {
 
     /// Messages and tool calls in the order they happened.
     var timeline: [TranscriptItem] {
-        TranscriptItem.timeline(messages: messages, calls: toolCalls) +
-            (pendingThread == selectedThread ? pendingMessage.map { [.message($0)] } ?? [] : [])
+        let confirmed = pendingRequestID.map { request in
+            messages.contains { $0.incoming && $0.channel == "client" && $0.wireID == request }
+        } ?? false
+        return TranscriptItem.timeline(messages: messages, calls: toolCalls) +
+            (pendingThread == selectedThread && !confirmed && !pendingUnconfirmed ?
+             pendingMessage.map { [.message($0)] } ?? [] : [])
     }
 
     /// Resets all remote content when connection identity changes.
@@ -386,11 +406,13 @@ final class ConversationModel {
         deliveries = [:]; activityUnsupported = false
         pendingMessage = nil; pendingThread = nil; pendingRequestID = nil
         pendingUnconfirmed = false; sending = false
+        manuallyUnreadSelection = nil
         resetTranscript()
     }
 
     /// New chats deliberately omit a workstream identifier.
     func newChat(about reminder: Conversation? = nil) {
+        manuallyUnreadSelection = nil
         refreshVersion += 1
         drafts[selectedThread ?? "new"] = draft
         selectedThread = nil
@@ -405,6 +427,7 @@ final class ConversationModel {
     /// Selection shows the cached transcript at once, or clears stale content before the first read.
     func select(_ conversation: Conversation) {
         guard conversation.threadID != selectedThread else { return }
+        manuallyUnreadSelection = nil
         refreshVersion += 1
         drafts[selectedThread ?? "new"] = draft
         selectedThread = conversation.threadID
@@ -508,6 +531,8 @@ final class ConversationModel {
     /// Loads the newest transcript pages and tool calls for the selected conversation.
     /// - Parameter maxAge: when set, a cached transcript younger than this is shown without reading.
     func refresh(_ model: ClientModel, moreMessages: Bool = false, maxAge: Duration? = nil) async throws {
+        // Until the receipt supplies a request ID, a refresh cannot reconcile the optimistic row safely.
+        guard pendingMessage == nil || !sending || pendingRequestID != nil else { return }
         guard let selected else { return }
         let thread = selected.threadID
         if let maxAge, !moreMessages, let cached = cache[thread],
@@ -653,6 +678,7 @@ final class ConversationModel {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, selected?.deleted != true else { return }
         sending = true
+        refreshVersion += 1
         let current = generation
         pendingUnconfirmed = false
         pendingThread = selectedThread
@@ -697,7 +723,7 @@ final class ConversationModel {
             error = nil
         } catch {
             guard generation == current else { return }
-            pendingUnconfirmed = !accepted
+            pendingUnconfirmed = !accepted || pendingRequestID == nil
             self.error = error.presentableMessage ?? self.error
         }
     }

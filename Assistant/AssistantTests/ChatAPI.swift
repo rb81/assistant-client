@@ -7,11 +7,15 @@ actor ChatAPI: ManagementAPI {
     var resources: [String] = []
     private var lost = false
     private var pauseSubmission = false
+    private var pauseReceipt = false
     private var submissionWaiter: CheckedContinuation<Void, Never>?
     private var requests: [(Int, String)] = []
     private var pausedReads = Set<String>()
     private var readWaiters: [String: CheckedContinuation<Void, Never>] = [:]
     private var conversationRows: [Conversation]?
+    private var assistantName = ""
+
+    func setAssistantName(_ name: String) { assistantName = name }
 
     /// List updates model remote activity and unsorted merged pages.
     func setConversations(_ rows: [Conversation]) { conversationRows = rows }
@@ -23,6 +27,7 @@ actor ChatAPI: ManagementAPI {
 
     /// Controlled latency lets tests inspect the optimistic transcript before the server accepts a send.
     func pauseNextSubmission() { pauseSubmission = true }
+    func pauseNextReceipt() { pauseReceipt = true }
     var submissionPaused: Bool { submissionWaiter != nil }
     func resumeSubmission() { submissionWaiter?.resume(); submissionWaiter = nil }
 
@@ -43,9 +48,13 @@ actor ChatAPI: ManagementAPI {
                 pauseSubmission = false
                 await withCheckedContinuation { submissionWaiter = $0 }
             }
-            if lost { lost = false; throw URLError(.networkConnectionLost) }
             let id = requests.count + 100
             requests.append((id, body["body"]?.string ?? body["question"]?.string ?? ""))
+            if lost { lost = false; throw URLError(.networkConnectionLost) }
+            if pauseReceipt {
+                pauseReceipt = false
+                await withCheckedContinuation { submissionWaiter = $0 }
+            }
             return Data("""
             {"id":"chat-operation","action":"chat","state":"succeeded","progress":"done","result":{"task_id":7,"request_id":\(id)}}
             """.utf8)
@@ -65,6 +74,14 @@ actor ChatAPI: ManagementAPI {
         }
         if resource == "services?details=true" {
             return Data(#"{"services":[{"id":"task-agent","title":"Task worker","state":"running","health":"healthy"}]}"#.utf8)
+        }
+        if resource == "query", body?["action"] == .string("skills.list") {
+            return Data(#"{"skills":[],"total":0}"#.utf8)
+        }
+        if resource == "configuration/settings?group=identity" {
+            return try JSONEncoder().encode(JSONValue.object(["settings": .array([
+                .object(["key": .string("AGENT_IDENTITY_NAME"), "value": .string(assistantName)])
+            ])]))
         }
         if resource == "tasks/7/snapshot" {
             return Data("""

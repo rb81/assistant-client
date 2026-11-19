@@ -118,6 +118,12 @@ final class AssistantUITests: XCTestCase {
         instructions.typeKey("a", modifierFlags: .command)
         instructions.typeText("Pane instructions draft")
         XCTAssertEqual(instructions.value as? String, "Pane instructions draft")
+        app.buttons["nav-inbox"].click()
+        XCTAssertTrue(app.textViews["Message Assistant"].waitForExistence(timeout: 5))
+        settings.click()
+        XCTAssertTrue(instructions.waitForExistence(timeout: 5))
+        XCTAssertEqual(instructions.value as? String, "Pane instructions draft",
+                       "Leaving Settings must retain its selected page and draft")
         identity.click()
         app.buttons["Review changes"].click()
         waitUntilEnabled(app.buttons["Save changes"])
@@ -163,7 +169,6 @@ final class AssistantUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         let data = app.buttons["nav-data"]
-        app.buttons["nav-connection"].click()
         XCTAssertTrue(data.waitForExistence(timeout: 10))
         data.click()
         let folder = app.textFields["New folder name"]
@@ -341,7 +346,6 @@ final class AssistantUITests: XCTestCase {
         openSupport(app)
         XCTAssertTrue(app.staticTexts["Task worker"].waitForExistence(timeout: 5))
         capture(app, name: dark ? "Server Health dark" : "Server Health light")
-        app.buttons["nav-connection"].click()
         app.buttons["nav-data"].click()
         XCTAssertTrue(app.buttons["Upload file"].waitForExistence(timeout: 5))
         capture(app, name: dark ? "Data dark" : "Data light")
@@ -366,7 +370,7 @@ final class AssistantUITests: XCTestCase {
         app.buttons["Save configuration"].click()
         let feedback = app.buttons["settings-feedback"]
         XCTAssertTrue(feedback.waitForExistence(timeout: 10))
-        XCTAssertEqual(feedback.label, "Saved. Apply changes from Connection & Support when you are ready.")
+        XCTAssertEqual(feedback.label, "Saved. Apply changes from Connections when you are ready.")
         XCTAssertEqual(nameField.value as? String, "Updated")
         XCTAssertFalse(app.buttons["Agent.yaml"].exists)
         app.buttons["settings-section-app-app"].click()
@@ -382,11 +386,10 @@ final class AssistantUITests: XCTestCase {
 
     @MainActor
     private func openSupport(_ app: XCUIApplication) {
-        app.buttons["nav-connection"].click()
         app.buttons["nav-services"].click()
     }
 
-    /// Connection & Support identifies unconfirmed actions and shows service status without expansion.
+    /// Connection health stays separate from unconfirmed mutation receipts in the global Activity pane.
     @MainActor
     func testSupportShowsUnconfirmedActionAndServices() {
         let app = XCUIApplication()
@@ -394,10 +397,12 @@ final class AssistantUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         openSupport(app)
+        XCTAssertTrue(app.staticTexts["Task worker"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["No receipt from the server"].exists)
+        app.buttons["activity-button"].click()
+        app.buttons["Check operation history"].click()
         XCTAssertTrue(app.staticTexts["Send a chat reply"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["No receipt from the server"].exists)
-        XCTAssertTrue(app.staticTexts["Task worker"].waitForExistence(timeout: 5))
-        app.buttons["Review operation history"].click()
         XCTAssertTrue(app.buttons["Refresh"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["Done"].exists)
     }

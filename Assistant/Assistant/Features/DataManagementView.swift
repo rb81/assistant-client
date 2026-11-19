@@ -85,8 +85,10 @@ struct DataManagementView: View {
             HStack {
                 Label("Recovery", systemImage: "externaldrive.badge.exclamationmark")
                 Spacer()
-                Text("Make and verify a server backup before resetting.").font(.caption)
+                Text(model.configurationDirty ? "Save or discard your Settings draft before resetting." :
+                        "Make and verify a server backup before resetting.").font(.caption)
                 Button("Reset data…", role: .destructive) { confirmation = ""; showingReset = true }
+                    .disabled(model.configurationDirty)
             }
             .foregroundStyle(Theme.secondary)
             .font(.callout)

@@ -30,10 +30,13 @@ final class ClientModel {
     var lastPoll: Date?
     var operations: [ManagementOperation] = []
     var references: [OperationReference] = []
+    private(set) var receiptLookups: [UUID: String] = [:]
     var busy = false
     var configurationDirty = false
     var chats: ConversationModel
     let reminderRuns: ConversationModel
+    let modelCatalog: OpenRouterCatalog
+    private(set) var assistantName = String(localized: "Assistant")
     var newChatRequest = UUID()
     var configurationApplying = false
     var liveRevision = 0
@@ -46,6 +49,12 @@ final class ClientModel {
     var activityUpdates: [ActivityUpdate] = []
     var updatesSeenAt = Date.distantPast
     var setupRequired = false
+    var activityPresented = false
+    var activitySection = ActivitySection.attention
+    var configurationVisit = UUID()
+    private var resourceCache: [String: (Date, JSONValue)] = [:]
+    private var resourceReads: [String: Task<JSONValue, Error>] = [:]
+    private var cacheGeneration = UUID()
     private(set) var services: [JSONValue] = []
     private(set) var servicesUpdatedAt: Date?
     private(set) var servicesLoading = false
@@ -53,6 +62,15 @@ final class ClientModel {
     private(set) var api: (any ManagementAPI)?
     private let connection = SSHConnection()
     private let defaults: UserDefaults
+    private let notificationDelivery: any ClientNotificationDelivering
+    private(set) var requestDurations: [String: TimeInterval] = [:]
+    var preferences: UserDefaults { defaults }
+    var unconfirmedReferences: [OperationReference] {
+        references.filter { reference in
+            reference.instanceID == health?.instanceID &&
+                !operations.contains(where: { $0.id == reference.operationID })
+        }
+    }
     private var pollTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?
     private var approvalTask: Task<Void, Never>?
@@ -63,12 +81,17 @@ final class ClientModel {
     private var generation = UUID()
 
     /// Loads only non-secret metadata and reports malformed local state explicitly.
-    init(defaults: UserDefaults = .standard, api: (any ManagementAPI)? = nil, health: InstanceHealth? = nil) {
+    init(defaults: UserDefaults = .standard, api: (any ManagementAPI)? = nil, health: InstanceHealth? = nil,
+         modelCatalogLoader: any OpenRouterCatalogLoading = PublicOpenRouterCatalog(),
+         notificationDelivery: (any ClientNotificationDelivering)? = nil) {
         self.defaults = defaults
+        self.notificationDelivery = notificationDelivery ?? SystemNotificationDelivery()
         self.chats = ConversationModel(defaults: defaults)
         self.reminderRuns = ConversationModel(defaults: defaults, reminderHistory: true)
+        self.modelCatalog = OpenRouterCatalog(defaults: defaults, loader: modelCatalogLoader)
         self.api = api
         self.health = health
+        assistantName = health?.name ?? String(localized: "Assistant")
         do {
             if let data = defaults.data(forKey: "assistant.profiles") {
                 profiles = try JSONDecoder().decode([ConnectionProfile].self, from: data)
@@ -116,6 +139,7 @@ final class ClientModel {
             guard current == generation else { return }
             self.api = api
             self.health = health
+            assistantName = health.name
             activationState = ActivationState(rawValue: defaults.string(forKey: "assistant.activation.\(health.instanceID)") ?? "") ?? .active
             updatesSeenAt = Date(timeIntervalSince1970: defaults.double(forKey: "assistant.updatesSeen.\(health.instanceID)"))
             profile.instanceID = health.instanceID
@@ -127,7 +151,7 @@ final class ClientModel {
             status = String(localized: "Connected")
             if health.capabilities.contains("configuration.structured") {
                 do {
-                    let catalog = try await api.read("configuration/catalog", as: JSONValue.self)
+                    let catalog = try await cachedRead("configuration/catalog")
                     guard generation == current else { return }
                     guard case .bool(let complete)? = catalog["setup_complete"] else { throw ClientError.malformedResponse }
                     setupRequired = !complete
@@ -146,6 +170,7 @@ final class ClientModel {
                 status = String(localized: "Connection failed")
                 self.api = nil
                 health = nil
+                assistantName = String(localized: "Assistant")
                 await connection.disconnect()
             }
         }
@@ -166,6 +191,7 @@ final class ClientModel {
         eventCursor = nil
         liveUpdates = false; liveUpdateError = nil
         api = nil
+        invalidateResources()
         health = nil
         clientID = nil
         messages = []
@@ -175,8 +201,10 @@ final class ClientModel {
         historyCursor = nil
         pollingError = nil
         operations = []
+        receiptLookups = [:]
         lastPoll = nil
         services = []; servicesUpdatedAt = nil; servicesError = nil; servicesLoading = false
+        requestDurations = [:]
         activationState = .active
         setupRequired = false
         status = String(localized: "Disconnected")
@@ -195,9 +223,73 @@ final class ClientModel {
     func read(_ resource: String) async throws -> JSONValue {
         guard let api else { throw ClientError.unavailable }
         let current = generation
+        let startedAt = Date()
         let result = try await api.read(resource, as: JSONValue.self)
         guard generation == current else { throw CancellationError() }
+        let path = String(resource.split(separator: "?", maxSplits: 1).first ?? "")
+        if requestDurations[path] == nil, requestDurations.count >= 50, let oldest = requestDurations.keys.first {
+            requestDurations.removeValue(forKey: oldest)
+        }
+        requestDurations[path] = Date().timeIntervalSince(startedAt)
         return result
+    }
+
+    /// Session-only read caching coalesces navigation requests without storing credentials on disk.
+    func cachedRead(_ resource: String, maxAge: TimeInterval = 60) async throws -> JSONValue {
+        try await cachedResource(resource, maxAge: maxAge) { try await self.read(resource) }
+    }
+
+    /// Only side-effect-free skill discovery enters the session query cache.
+    func cachedSkillQuery(_ payload: JSONValue) async throws -> JSONValue {
+        guard ["skills.list", "skills.read"].contains(payload["action"]?.string ?? "") else {
+            throw ClientError.invalidResource
+        }
+        let key = "query:" + (try payload.formatted())
+        return try await cachedResource(key, maxAge: 60) { try await self.query("query", payload: payload) }
+    }
+
+    private func cachedResource(_ key: String, maxAge: TimeInterval,
+                                load: @escaping @MainActor () async throws -> JSONValue) async throws -> JSONValue {
+        let current = cacheGeneration
+        if let (date, value) = resourceCache[key], Date().timeIntervalSince(date) < maxAge { return value }
+        if let task = resourceReads[key] {
+            let value = try await task.value
+            guard current == cacheGeneration else { throw CancellationError() }
+            return value
+        }
+        let task = Task { try await load() }
+        resourceReads[key] = task
+        defer { if current == cacheGeneration { resourceReads[key] = nil } }
+        let value = try await task.value
+        guard current == cacheGeneration else { throw CancellationError() }
+        if resourceCache.count >= 128, let oldest = resourceCache.min(by: { $0.value.0 < $1.value.0 })?.key {
+            resourceCache.removeValue(forKey: oldest)
+        }
+        resourceCache[key] = (Date(), value)
+        return value
+    }
+
+    /// Identity values are read from their owning settings page, never the static API product name.
+    func refreshAssistantName() async {
+        guard health?.capabilities.contains("configuration.structured") == true else { return }
+        do {
+            let settings = try await cachedRead("configuration/settings?group=identity")
+            guard let name = settings["settings"]?.array?.first(where: {
+                $0["key"] == .string("AGENT_IDENTITY_NAME")
+            })?["value"]?.string else { throw ClientError.malformedResponse }
+            let configured = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            assistantName = configured.isEmpty ? (health?.name ?? String(localized: "Assistant")) : configured
+        } catch {
+            if let message = error.presentableMessage { self.error = message }
+        }
+    }
+
+    /// Explicit reloads and mutations invalidate all dependent settings and inventory snapshots.
+    func invalidateResources() {
+        cacheGeneration = UUID()
+        for task in resourceReads.values { task.cancel() }
+        resourceReads = [:]
+        resourceCache = [:]
     }
 
     /// Keeps the last successful inventory visible while checking current health.
@@ -300,6 +392,9 @@ final class ClientModel {
                 operation.error ?? String(localized: "Operation \(operation.id) ended as \(operation.state). Inspect current state before retrying.")
             )
         }
+        if action.hasPrefix("configuration.") || action.hasPrefix("credential") || action == "domain.mutate" {
+            invalidateResources()
+        }
         if action == "service.lifecycle", payload["service"] == nil,
            ["start", "apply"].contains(payload["action"]?.string ?? "") {
             recordActivation(.active)
@@ -312,8 +407,28 @@ final class ClientModel {
     func refreshOperations() async throws {
         guard let api else { throw ClientError.unavailable }
         let current = generation
-        let statuses = try await api.read("operations", as: [ManagementOperation].self)
+        var statuses = try await api.read("operations", as: [ManagementOperation].self)
         guard current == generation else { throw CancellationError() }
+        if health?.capabilities.contains("operations.lookup") == true {
+            for reference in references where reference.instanceID == health?.instanceID &&
+                !statuses.contains(where: { $0.id == reference.operationID }) {
+                var query = URLComponents()
+                query.queryItems = [URLQueryItem(name: "key", value: reference.key)]
+                let result = try await read("operations/lookup?\(query.percentEncodedQuery ?? "")")
+                guard current == generation else { throw CancellationError() }
+                guard let status = result["status"]?.string,
+                      ["found", "not_found", "expired"].contains(status) else { throw ClientError.malformedResponse }
+                receiptLookups[reference.id] = status
+                if status == "found" {
+                    guard let value = result["operation"] else { throw ClientError.malformedResponse }
+                    let operation = try Wire.decoder().decode(ManagementOperation.self, from: JSONEncoder().encode(value))
+                    if !statuses.contains(where: { $0.id == operation.id }) { statuses.append(operation) }
+                    if let index = references.firstIndex(where: { $0.id == reference.id }) {
+                        references[index].operationID = operation.id
+                    }
+                }
+            }
+        }
         operations = statuses
         references.removeAll { reference in
             reference.instanceID == health?.instanceID &&
@@ -386,7 +501,8 @@ final class ClientModel {
                 }
                 let known = Set(messages.map(\.id))
                 for message in result.messages where !known.contains(message.id) {
-                    await addUpdate(id: "delivery:\(message.id)", title: String(localized: "Assistant has an update"),
+                    await addUpdate(id: "delivery:\(message.id)", title: message.taskID == nil ?
+                                    String(localized: "New installation notice") : String(localized: "New reply from \(assistantName)"),
                                     taskID: message.taskID, category: "replies")
                 }
                 merge(result.messages)
@@ -523,13 +639,13 @@ final class ClientModel {
             defaults.set(try JSONEncoder().encode(activityUpdates), forKey: "assistant.activity")
             guard defaults.bool(forKey: "assistant.notifications"),
                   defaults.object(forKey: "assistant.notifications.\(category)") as? Bool ?? true,
-                  !NSApp.isActive else { return }
+                  !notificationDelivery.applicationIsActive else { return }
             let content = UNMutableNotificationContent()
-            content.title = String(localized: "Assistant")
+            content.title = assistantName
             content.body = category == "errors" ? String(localized: "Something needs your attention.") : title
             content.userInfo = ["instance": instance, "category": category]
             if let taskID { content.userInfo["task"] = taskID }
-            try await UNUserNotificationCenter.current().add(
+            try await notificationDelivery.deliver(
                 UNNotificationRequest(identifier: identifier, content: content, trigger: nil))
         } catch { self.error = String(localized: "Notification could not be saved or delivered: \(error.localizedDescription)") }
     }

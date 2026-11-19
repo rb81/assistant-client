@@ -214,6 +214,10 @@ actor PreviewManagementAPI: ManagementAPI {
                             help: "Where approval requests are delivered.", choices: ["email", "telegram", "both", "client"]),
                     setting("models", "AGENT_LLM_MODEL", "Primary model", "example/model",
                             help: "Model used for ordinary tasks."),
+                    setting("models", "AGENT_LLM_BASE_URL", "Provider API URL", "https://openrouter.ai/api/v1",
+                            help: "The HTTPS endpoint used by task models."),
+                    setting("models", "AGENT_LLM_ZDR_ONLY", "Require Zero Data Retention on OpenRouter", "false",
+                            boolean: true, help: "Restrict OpenRouter requests to Zero Data Retention endpoints."),
                     .object(["group": .string("models"), "key": .string("AGENT_LLM_OPENROUTER_API_KEY"),
                              "label": .string("OpenRouter API key"), "value": .string(""),
                              "secret": .bool(true), "boolean": .bool(false), "editable": .bool(true)]),
@@ -234,7 +238,7 @@ actor PreviewManagementAPI: ManagementAPI {
                             help: "Upper bound on model steps for one task.")
                 ]),
                 "groups": .array([
-                    group("identity", "About your assistant", help: "Name your assistant and set its timezone.", basic: true),
+                    group("identity", "Assistant & people", help: "Name your assistant and set its timezone.", basic: true),
                     group("models", "Models & access", help: "Choose the models used for tasks.", basic: true),
                     group("email", "Email", help: "Connect a dedicated assistant mailbox.", basic: true),
                     group("calendar", "Calendar", help: "Connect Google, Outlook or Zoho calendars.", basic: true),

@@ -35,6 +35,7 @@ struct SkillPreference: Decodable {
 
 /// Settings for inspecting locked workflows and managing versioned custom guidance.
 struct SkillsSettingsView: View {
+    private static let pageSize = 20
     let model: ClientModel
     @State private var entries: [SkillEntry] = []
     @State private var selected: SkillEntry?
@@ -134,7 +135,10 @@ struct SkillsSettingsView: View {
                     TextField("Search skills", text: $search)
                         .accessibilityIdentifier("skills-search")
                     StableProgress(active: loading)
-                    Button("Refresh", systemImage: "arrow.clockwise") { Task { await load(searchPage) } }
+                    Button("Refresh", systemImage: "arrow.clockwise") {
+                        model.invalidateResources()
+                        Task { await load(searchPage) }
+                    }
                     Button("Add skill", systemImage: "plus") { editor = SkillDraft() }
                 }
                 Divider()
@@ -153,8 +157,10 @@ struct SkillsSettingsView: View {
                 }
                 if offset > 0 || total > entries.count {
                     HStack {
-                        Button("Previous") { offset = max(0, offset - 8) }.disabled(offset == 0)
-                        Button("Next") { offset += 8 }.disabled(offset + entries.count >= total)
+                        Button("Previous") { offset = max(0, offset - Self.pageSize) }.disabled(offset == 0)
+                        Text("\(offset + (entries.isEmpty ? 0 : 1))–\(offset + entries.count) of \(total)")
+                            .font(.caption).foregroundStyle(Theme.secondary)
+                        Button("Next") { offset += Self.pageSize }.disabled(offset + entries.count >= total)
                     }
                 }
             }
@@ -209,7 +215,7 @@ struct SkillsSettingsView: View {
     }
 
     private func fetch<T: Decodable>(_ action: String, _ arguments: [String: JSONValue], as type: T.Type) async throws -> T {
-        let value = try await model.query("query", payload: .object([
+        let value = try await model.cachedSkillQuery(.object([
             "action": .string("skills.\(action)"), "arguments": .object(arguments)
         ]))
         return try Wire.decoder().decode(type, from: JSONEncoder().encode(value))
@@ -220,13 +226,13 @@ struct SkillsSettingsView: View {
         defer { if !Task.isCancelled && request == searchPage { loading = false } }
         do {
             var arguments: [String: JSONValue] = [
-                "query": .string(request.query), "offset": .integer(Int64(request.offset)), "limit": .integer(8)
+                "query": .string(request.query), "offset": .integer(Int64(request.offset)), "limit": .integer(Int64(Self.pageSize))
             ]
             if attachedPreferences { arguments["include_overlays"] = .bool(false) }
             let page = try await fetch("list", arguments, as: Page.self)
             guard !Task.isCancelled, request == searchPage else { return }
             if request.offset > 0 && request.offset >= page.total {
-                offset = max(0, ((page.total - 1) / 8) * 8)
+                offset = max(0, ((page.total - 1) / Self.pageSize) * Self.pageSize)
             } else {
                 entries = page.skills
             }
@@ -326,8 +332,13 @@ private struct SkillEditor: View {
                     .foregroundStyle(Theme.secondary)
             }
             Text(draft.parent == nil ? "Skill instructions" : "Preference instructions").font(.headline)
-            TextEditor(text: $draft.body).font(.body.monospaced())
-                .accessibilityLabel(draft.parent == nil ? "Skill instructions" : "Preference instructions")
+            MarkdownEditor(text: $draft.body,
+                           label: draft.parent == nil ? String(localized: "Skill instructions") :
+                            String(localized: "Preference instructions"), identifier: "skill-instructions-editor")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radius))
+                .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline))
             HStack {
                 StableProgress(active: saving)
                 Spacer()

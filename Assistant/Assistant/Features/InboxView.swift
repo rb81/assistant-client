@@ -6,8 +6,6 @@ struct InboxView: View {
     let chat: ConversationModel
     var isReminders = false
     var askAboutRun: ((Conversation) -> Void)? = nil
-    @State private var showingApprovals = false
-    @State private var showingUpdates = false
     @State private var showingSchedule = false
     @State private var deletionPreview: JSONValue?
     @State private var scrollState = TranscriptScrollState()
@@ -66,7 +64,9 @@ struct InboxView: View {
             VStack(spacing: 0) {
                 transcriptHeader
                 Divider()
-                if let error = chat.error { ErrorBanner(message: error).padding() }
+                if chat.unconfirmedSend {
+                    ErrorBanner(message: String(localized: "The send outcome is unconfirmed. Your draft is preserved. Check Activity > Operation History and the conversation before sending it again.")).padding()
+                } else if let error = chat.error { ErrorBanner(message: error).padding() }
                 transcript.frame(maxHeight: .infinity)
                 Divider()
                 if isReminders {
@@ -108,24 +108,11 @@ struct InboxView: View {
                 do { try await Task.sleep(for: delay) } catch { return }
             }
         }
-        .sheet(isPresented: $showingApprovals) {
-            VStack {
-                ApprovalsView(model: model)
-                Button("Done") { showingApprovals = false }.padding()
-            }.frame(width: 720, height: 600)
-        }
         // Presenting from the preview itself keeps the sheet's content in sync with the value it shows.
         .sheet(isPresented: Binding(get: { deletionPreview != nil }, set: { if !$0 { deletionPreview = nil } })) {
             deletionReview
         }
-        .sheet(isPresented: $showingUpdates) { updates }
         .sheet(isPresented: $showingSchedule) { ReminderScheduleView(model: model) }
-        .task(id: model.notificationApprovals) {
-            if model.notificationApprovals {
-                showingApprovals = true
-                model.notificationApprovals = false
-            }
-        }
         .confirmationDialog("Continue this conversation in Assistant?", isPresented: $confirmingRoute, titleVisibility: .visible) {
             Button("Continue here") { Task { await chat.send(model) } }
             Button("Cancel", role: .cancel) {}
@@ -187,6 +174,13 @@ struct InboxView: View {
                         }
                         .disabled(chat.sending)
                         .accessibilityIdentifier("chat-thread-\(conversation.latestTaskID)")
+                        .contextMenu {
+                            Button(chat.isUnread(conversation) ? "Mark as Read" : "Mark as Unread",
+                                   systemImage: chat.isUnread(conversation) ? "envelope.open" : "envelope.badge") {
+                                chat.setRead(!chat.isUnread(conversation), conversation: conversation)
+                            }
+                            Button("Open conversation", systemImage: "bubble.left") { chat.select(conversation) }
+                        }
                     }
                     if chat.conversations.count < chat.totalConversations {
                         Button(isReminders ? "Load older reminders" : "Load older conversations") {
@@ -197,15 +191,6 @@ struct InboxView: View {
                         }.padding(.vertical, 12)
                     }
                 }
-            }
-            if !isReminders {
-                Button(model.pendingApprovals == 0 ? String(localized: "Review approvals") :
-                        String(localized: "Review approvals (\(model.pendingApprovals))"),
-                       systemImage: "checkmark.shield") { showingApprovals = true }
-                    .font(.callout)
-                Button(model.unreadUpdates == 0 ? String(localized: "Updates") :
-                        String(localized: "Updates (\(model.unreadUpdates))"), systemImage: "bell") { showingUpdates = true }
-                    .font(.callout)
             }
         }.padding(16).background(Theme.panel.opacity(0.6))
     }
@@ -375,11 +360,10 @@ struct InboxView: View {
     /// One message: who sent it, when, and its rendered body.
     private func messageView(_ message: ChatMessage) -> some View {
         let external = message.external == true && !message.incoming
-        let pending = message.wireID == -1
         return VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Label(message.scheduled ? String(localized: "Scheduled run") :
-                        message.incoming ? String(localized: "You") : model.health?.name ?? "Assistant",
+                        message.incoming ? String(localized: "You") : model.assistantName,
                       systemImage: message.scheduled ? "clock" :
                         message.incoming ? "person.crop.circle" : external ? "envelope.badge" : "sparkle")
                     .font(.callout.weight(.semibold))
@@ -414,18 +398,6 @@ struct InboxView: View {
             ForEach(Array((message.attachments ?? []).enumerated()), id: \.offset) { _, attachment in
                 ChatAttachmentView(model: model, attachment: attachment)
             }
-            if pending {
-                HStack(spacing: 8) {
-                    if chat.sending {
-                        ProgressView().controlSize(.mini).accessibilityLabel("Sending")
-                    } else if chat.pendingUnconfirmed {
-                        Label("Not confirmed — inspect operation history before retrying", systemImage: "exclamationmark.circle")
-                            .font(.caption).foregroundStyle(Theme.secondary)
-                    } else {
-                        Text("Sent — waiting for transcript").font(.caption).foregroundStyle(Theme.secondary)
-                    }
-                }
-            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -443,74 +415,13 @@ struct InboxView: View {
         return date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    /// Installation notices are not chat threads, but still need visible delivery and acknowledgment.
-    private var updates: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            PageHeading(title: "Updates", subtitle: "Notices from your Assistant installation.")
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    if model.messages.filter({ $0.taskID == nil }).isEmpty &&
-                        !model.activityUpdates.contains(where: { $0.instanceID == model.health?.instanceID }) {
-                        Text("No updates to show.").foregroundStyle(Theme.secondary)
-                    }
-                    ForEach(model.activityUpdates.filter { $0.instanceID == model.health?.instanceID }) { update in
-                        Button {
-                            model.notificationTaskID = update.taskID
-                            model.notificationApprovals = update.category == "approvals"
-                            model.notificationRequest = UUID()
-                            showingUpdates = false
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(update.title).font(.callout.weight(.medium))
-                                Text(update.createdAt.formatted(date: .abbreviated, time: .shortened))
-                                    .font(.caption).foregroundStyle(Theme.secondary)
-                            }.frame(maxWidth: .infinity, alignment: .leading)
-                        }.buttonStyle(.plain)
-                    }
-                    ForEach(model.messages.filter { $0.taskID == nil }) { message in
-                        ManagementPanel {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text(message.purpose.capitalized).font(.headline)
-                                MarkdownContent(text: message.body)
-                                if let error = message.error { ErrorBanner(message: error) }
-                            }
-                        }
-                    }
-                }
-            }
-            HStack {
-                Button("Earlier updates") {
-                    Task {
-                        do { try await model.loadHistory(older: true) }
-                        catch { chat.error = error.presentableMessage ?? chat.error }
-                    }
-                }.disabled(model.historyCursor == nil)
-                Spacer()
-                Button("Done") { showingUpdates = false }
-            }
-        }
-        .padding(24).frame(width: 700, height: 600)
-        .onAppear { model.markUpdatesSeen() }
-        .onChange(of: model.activityUpdates.count) { model.markUpdatesSeen() }
-        .task(id: model.offeredIDs) {
-            let ids = Set(model.messages.filter { $0.taskID == nil }.map(\.id))
-            await model.acknowledgeRendered(ids: model.offeredIDs.filter(ids.contains))
-        }
-    }
-
     /// The composer needs no task IDs or workstream controls, and supports a keyboard send action.
     private var composer: some View {
         @Bindable var chat = self.chat
         return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                StableProgress(active: chat.selected?.active == true && !chat.sending)
-                Text(chat.selected?.active == true ? String(localized: "Working…") :
-                        chat.selected?.channel != "client" && chat.selected != nil ?
-                        String(localized: "Reply destination: this Assistant client") : "")
-                    .font(.caption).foregroundStyle(Theme.secondary)
-            }.frame(height: 20)
             TextEditor(text: $chat.draft).font(.body).scrollContentBackground(.hidden)
                 .frame(minHeight: 65, maxHeight: 140)
+                .padding(10)
                 .background(Theme.background, in: RoundedRectangle(cornerRadius: 8))
                 .overlay {
                     RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.secondary.opacity(0.5))
@@ -518,18 +429,23 @@ struct InboxView: View {
                 }
                 .accessibilityLabel("Message Assistant")
             HStack {
-                if chat.selectedThread == nil {
+                if chat.sending || chat.selected?.active == true {
+                    StableProgress(active: true)
+                    Text(chat.sending ? "Sending…" : "Working…")
+                        .font(.caption).foregroundStyle(Theme.secondary)
+                        .accessibilityIdentifier("chat-activity")
+                } else if chat.selectedThread == nil {
                     Toggle("Deep research", isOn: $chat.research).toggleStyle(.checkbox)
                 } else {
-                    Text("Reply to this conversation").font(.caption).foregroundStyle(Theme.secondary)
+                    Text(chat.selected?.channel == "client" ? "Reply to this conversation" :
+                            "Reply destination: this Assistant client").font(.caption).foregroundStyle(Theme.secondary)
                 }
                 Spacer()
                 Button {
                     if let selected = chat.selected, selected.channel != "client" { confirmingRoute = true }
                     else { Task { await chat.send(model) } }
                 } label: {
-                    if chat.sending { Text("Sending…") }
-                    else { Label("Send", systemImage: "arrow.up") }
+                    Label("Send", systemImage: "arrow.up")
                 }
                 .buttonStyle(PrimaryButtonStyle()).keyboardShortcut(.return, modifiers: .command)
                 .disabled(chat.sending || chat.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||

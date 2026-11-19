@@ -6,9 +6,9 @@ struct ContentView: View {
     @State private var selection: Destination? = .inbox
     @State private var showingConnection = false
     @State private var confirmingDiscard = false
-    @State private var nextDestination: Destination?
-    @State private var disconnectAfterDiscard = false
     @State private var showingStatus = false
+    @State private var settingsIdentity = UUID()
+    @State private var settingsOpened = false
 
     /// Each destination has a stable native sidebar identity.
     enum Destination: String, CaseIterable, Identifiable {
@@ -21,7 +21,7 @@ struct ContentView: View {
             case .inbox: return String(localized: "Chats")
             case .reminders: return String(localized: "Reminders")
             case .configuration: return String(localized: "Settings")
-            case .services: return String(localized: "Connection & Support")
+            case .services: return String(localized: "Connections")
             case .data: return String(localized: "Data")
             }
         }
@@ -47,7 +47,7 @@ struct ContentView: View {
                     Text("Assistant").font(.headline)
                 }.padding(.horizontal, 20).padding(.top, 24).padding(.bottom, 28)
                 VStack(spacing: 6) {
-                    ForEach([Destination.inbox, .reminders]) { destination in
+                    ForEach([Destination.inbox, .reminders, .services, .data]) { destination in
                         Button { navigate(destination) } label: {
                             Label(destination.title, systemImage: destination.symbol)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,6 +88,14 @@ struct ContentView: View {
                 if model.health == nil {
                     disconnected
                 } else {
+                    ZStack {
+                    if settingsOpened {
+                        ConfigurationView(model: model)
+                            .id(settingsIdentity)
+                            .opacity(selection == .configuration ? 1 : 0)
+                            .allowsHitTesting(selection == .configuration)
+                            .accessibilityHidden(selection != .configuration)
+                    }
                     switch selection ?? .inbox {
                     case .inbox: InboxView(model: model, chat: model.chats)
                     case .reminders:
@@ -95,9 +103,10 @@ struct ContentView: View {
                             model.chats.newChat(about: reminder)
                             navigate(.inbox)
                         }
-                    case .configuration: ConfigurationView(model: model)
+                    case .configuration: EmptyView()
                     case .services: ServicesView(model: model)
                     case .data: DataManagementView(model: model)
+                    }
                     }
                 }
             }
@@ -106,9 +115,20 @@ struct ContentView: View {
             .navigationTitle((selection ?? .inbox).title)
             .toolbar {
                 if model.health != nil {
+                    let activityCount = model.unreadUpdates + model.pendingApprovals + model.unconfirmedReferences.count
+                    Button {
+                        model.activitySection = model.pendingApprovals > 0 ||
+                            !model.unconfirmedReferences.isEmpty ? .attention : .updates
+                        model.activityPresented = true
+                    } label: {
+                        Label(activityCount > 0 ?
+                              String(localized: "Activity (\(activityCount))") :
+                                String(localized: "Activity"), systemImage: "bell")
+                    }
+                    .help("Replies, permission requests, and operation history")
+                    .accessibilityIdentifier("activity-button")
                     Button("Disconnect", systemImage: "network.slash") {
                         if model.configurationDirty {
-                            disconnectAfterDiscard = true
                             confirmingDiscard = true
                         } else { Task { await model.disconnect() } }
                     }.disabled(model.busy || model.configurationApplying)
@@ -119,7 +139,7 @@ struct ContentView: View {
             }
         }
         .onChange(of: model.newChatRequest) {
-            guard !model.configurationDirty, !model.configurationApplying else { return }
+            guard !model.configurationApplying else { return }
             selection = .inbox
             model.chats.newChat()
         }
@@ -127,8 +147,14 @@ struct ContentView: View {
             if model.setupRequired { navigate(.configuration) }
         }
         .onChange(of: model.notificationRequest) {
-            guard !model.configurationDirty, !model.configurationApplying else {
-                model.error = String(localized: "Save or discard your settings draft before opening this update.")
+            if model.notificationApprovals {
+                model.activitySection = .attention
+                model.activityPresented = true
+                model.notificationApprovals = false
+                return
+            }
+            guard !model.configurationApplying else {
+                model.error = String(localized: "Wait for settings activation to finish before opening this update.")
                 return
             }
             selection = .inbox
@@ -147,14 +173,26 @@ struct ContentView: View {
         .sheet(isPresented: $showingConnection) {
             ConnectionView(model: model, isPresented: $showingConnection)
         }
-        .confirmationDialog("Discard unsaved configuration changes?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
-            Button("Discard changes", role: .destructive) {
-                model.configurationDirty = false
-                if disconnectAfterDiscard { Task { await model.disconnect() } }
-                else { selection = nextDestination }
-                disconnectAfterDiscard = false
+        .sheet(isPresented: $model.activityPresented) { ActivityView(model: model) }
+        .task(id: model.health?.instanceID) {
+            guard model.health != nil else { return }
+            await model.refreshAssistantName()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(6 * 60 * 60)) } catch { return }
+                if model.modelCatalog.automaticallyRefresh { await model.modelCatalog.refreshKnownLists() }
             }
-            Button("Keep editing", role: .cancel) { disconnectAfterDiscard = false }
+        }
+        .onChange(of: model.health?.instanceID) {
+            settingsIdentity = UUID()
+            settingsOpened = model.health != nil && selection == .configuration
+        }
+        .confirmationDialog("Discard unsaved configuration changes and disconnect?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
+            Button("Discard and disconnect", role: .destructive) {
+                model.configurationDirty = false
+                settingsIdentity = UUID()
+                Task { await model.disconnect() }
+            }
+            Button("Keep editing", role: .cancel) {}
         }
     }
 
@@ -165,7 +203,7 @@ struct ContentView: View {
                         model.error != nil || model.pollingError != nil || model.liveUpdateError != nil ? .orange : .green)
         }
         .buttonStyle(.plain)
-        .help("Connection & Support")
+        .help("Connection status")
         .accessibilityIdentifier("nav-connection")
         .popover(isPresented: $showingStatus) {
             VStack(alignment: .leading, spacing: 12) {
@@ -177,11 +215,7 @@ struct ContentView: View {
                     Text(model.profile.name).font(.headline)
                     Text(model.liveUpdates ? "Live updates are on" : "Checking for updates")
                         .foregroundStyle(Theme.secondary)
-                    ForEach([Destination.services, .data]) { destination in
-                        Button { showingStatus = false; navigate(destination) } label: {
-                            Label(destination.title, systemImage: destination.symbol)
-                        }.accessibilityIdentifier("nav-\(destination.rawValue)")
-                    }
+                    Button("Connection details") { showingStatus = false; navigate(.services) }
                 } else {
                     Button("Connect") { showingStatus = false; showingConnection = true }
                 }
@@ -190,15 +224,15 @@ struct ContentView: View {
         }
     }
 
-    /// Navigation does not silently destroy a configuration draft.
+    /// Settings stay mounted, so navigation preserves drafts without a discard prompt.
     private func navigate(_ destination: Destination?) {
         guard !model.configurationApplying else { return }
         guard destination != selection else { return }
-        if model.configurationDirty {
-            nextDestination = destination
-            disconnectAfterDiscard = false
-            confirmingDiscard = true
-        } else { selection = destination }
+        if destination == .configuration {
+            settingsOpened = true
+            model.configurationVisit = UUID()
+        }
+        selection = destination
     }
 
     /// The first launch performs no network activity until the user explicitly connects.

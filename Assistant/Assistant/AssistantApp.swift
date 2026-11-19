@@ -19,12 +19,13 @@ struct AssistantApp: App {
             if !restoreCache { defaults.removePersistentDomain(forName: "assistant.ui-fixture") }
             let health = InstanceHealth(apiVersion: 2, instanceID: "fixture", name: "Assistant",
                                         capabilities: ["configuration.read", "configuration.structured", "configuration.sections",
-                                                       "skills.manage", "skills.preferences"], readOnly: false)
+                                                       "skills.manage", "skills.preferences", "approvals.read"], readOnly: false)
             let fixture = ClientModel(defaults: defaults, api: PreviewManagementAPI(
                 chatDetails: ProcessInfo.processInfo.arguments.contains("--ui-chat-details"),
                 offline: restoreCache,
                 liveChat: ProcessInfo.processInfo.arguments.contains("--ui-live-chat"),
-                slowReads: ProcessInfo.processInfo.arguments.contains("--ui-slow-reads")), health: health)
+                slowReads: ProcessInfo.processInfo.arguments.contains("--ui-slow-reads")), health: health,
+                                      modelCatalogLoader: PreviewCatalogLoader())
             fixture.clientID = String(repeating: "a", count: 32)
             fixture.status = String(localized: "Local test fixture")
             if ProcessInfo.processInfo.arguments.contains("--ui-unconfirmed-action") {
@@ -66,6 +67,7 @@ struct AssistantApp: App {
     var body: some Scene {
         WindowGroup(id: "main") {
             ContentView(model: model)
+                .defaultAppStorage(model.preferences)
                 .onAppear {
                     lifecycle.model = model
                     lifecycle.showWindow = { openWindow(id: "main") }
@@ -79,12 +81,13 @@ struct AssistantApp: App {
             CommandGroup(replacing: .newItem) {
                 Button("New chat") { model.newChatRequest = UUID() }
                     .keyboardShortcut("n")
-                    .disabled(model.health == nil || model.chats.sending || model.configurationDirty)
+                    .disabled(model.health == nil || model.chats.sending || model.configurationApplying)
             }
 
         }
         Settings {
-            ScrollView { AppPreferencesView(model: model).padding(24) }.frame(width: 520, height: 520)
+            ScrollView { AppPreferencesView(model: model).padding(24) }
+                .defaultAppStorage(model.preferences).frame(width: 580, height: 620)
         }
         MenuBarExtra("Assistant", systemImage: "point.3.connected.trianglepath.dotted", isInserted: menuBarInsertion) {
             Text(model.status)
@@ -174,6 +177,19 @@ struct AppPreferencesView: View {
                     Toggle("Approval requests", isOn: $approvals)
                     Toggle("Failures and connection problems", isOn: $errors)
                 }.toggleStyle(.switch)
+            }
+            ManagementPanel {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("OpenRouter model lists").font(.headline)
+                    ModelCatalogControls(catalog: model.modelCatalog, zdr: false)
+                    Button("Refresh ZDR model list") { Task { await model.modelCatalog.refresh(zdr: true, force: true) } }
+                        .disabled(model.modelCatalog.loading.contains(true))
+                    if let error = model.modelCatalog.errors[false] ?? model.modelCatalog.errors[true] {
+                        Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+                    }
+                    Text("Model lists are cached on this Mac. Automatic refresh checks once a week while the app is running; manual refresh works even when it’s turned off. This does not change server settings.")
+                        .font(.callout).foregroundStyle(Theme.secondary)
+                }
             }
             ManagementPanel {
                 VStack(alignment: .leading, spacing: 12) {

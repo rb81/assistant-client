@@ -127,7 +127,7 @@ struct ApprovalsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.spacing) {
-                PageHeading(title: "Approvals", subtitle: "Review what Assistant needs before it can continue.")
+                PageHeading(title: "Permission requests", subtitle: "Assistant is asking permission to take these specific actions. Review each action before allowing it.")
                 HStack {
                     Button("Refresh", systemImage: "arrow.clockwise") { Task { await load() } }
                     Spacer()
@@ -182,6 +182,9 @@ struct ApprovalsView: View {
 
     private func load() async {
         do {
+            guard model.health?.capabilities.contains("approvals.read") == true else {
+                throw ClientError.serverOutdated(String(localized: "permission requests"))
+            }
             let result = try await model.read("approvals?limit=50&offset=\(offset)")
             guard let values = result["approvals"]?.array else { throw ClientError.malformedResponse }
             approvals = values; error = nil

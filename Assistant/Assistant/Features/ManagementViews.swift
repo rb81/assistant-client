@@ -31,23 +31,16 @@ struct ServicesView: View {
     @State private var error: String?
     @State private var busy = false
     @State private var logService: String?
-    @State private var showingOperations = false
-
-    private var unresolved: [OperationReference] {
-        model.references.filter { $0.instanceID == model.health?.instanceID }
-            .sorted { $0.submittedAt > $1.submittedAt }
-    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                PageHeading(title: "Connection & Support", subtitle: "Check whether Assistant is ready and get help when something stops working.")
+                PageHeading(title: "Connections", subtitle: "Your server connection, service health, and diagnostics.")
                 HStack {
                     StatusBadge(title: model.status, tone: model.pollingError == nil ? .green : .orange)
                     Text(model.profile.name).font(.headline)
                     StableProgress(active: model.servicesLoading)
                     Spacer()
-                    Button("Operation history", systemImage: "clock.arrow.circlepath") { showingOperations = true }
                     Button(model.servicesError == nil ? "Refresh" : "Retry", systemImage: "arrow.clockwise") { Task { await load() } }
                         .disabled(busy || model.servicesLoading)
                 }
@@ -66,21 +59,6 @@ struct ServicesView: View {
                           String(localized: "Saved settings need applying. Review and apply when you are ready.") :
                           String(localized: "Activation outcome needs checking. Inspect operation history before retrying."),
                           systemImage: "exclamationmark.circle").foregroundStyle(.orange)
-                }
-                if !unresolved.isEmpty {
-                    ManagementPanel {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Label("Actions awaiting confirmation", systemImage: "exclamationmark.circle.fill")
-                                .font(.headline)
-                                .symbolRenderingMode(.hierarchical)
-                            Text("Assistant hasn’t confirmed whether these actions finished. Check the history before trying again.")
-                                .foregroundStyle(Theme.secondary)
-                            ForEach(unresolved.prefix(3)) { reference in
-                                OperationReceiptRow(reference: reference)
-                            }
-                            Button("Review operation history") { showingOperations = true }
-                        }
-                    }
                 }
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -106,6 +84,20 @@ struct ServicesView: View {
                 }
                 if model.services.isEmpty && !model.servicesLoading && model.servicesError == nil {
                     Text("No service statuses were returned.").foregroundStyle(Theme.secondary)
+                }
+                DisclosureGroup("Request performance") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Most recent successful network reads, including tunnel and server time. Cached navigation does not make another request.")
+                            .font(.callout).foregroundStyle(Theme.secondary)
+                        ForEach(model.requestDurations.keys.sorted(), id: \.self) { resource in
+                            HStack {
+                                Text(resource).font(.caption.monospaced())
+                                Spacer()
+                                Text((model.requestDurations[resource] ?? 0).formatted(.number.precision(.fractionLength(2))) + " s")
+                                    .font(.caption.monospacedDigit()).foregroundStyle(Theme.secondary)
+                            }
+                        }
+                    }.padding(.top, 12)
                 }
             }
             .frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity)
@@ -135,12 +127,6 @@ struct ServicesView: View {
                     ResourceInspector(model: model, resource: "services/\(logService)/logs")
                 }.frame(width: 800, height: 600)
             }
-        }
-        .sheet(isPresented: $showingOperations) {
-            VStack {
-                OperationsView(model: model)
-                Button("Done") { showingOperations = false }.padding()
-            }.frame(width: 760, height: 600)
         }
     }
 
@@ -271,22 +257,39 @@ private func operationTitle(_ action: String) -> String {
 struct OperationsView: View {
     let model: ClientModel
     @State private var error: String?
+    @State private var loading = true
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 PageHeading(title: "Operation history", subtitle: "Accepted is not completed. Check uncertain outcomes before submitting again.")
-                Button("Refresh") { Task { await refresh() } }
+                HStack {
+                    Button("Refresh") { Task { await refresh() } }.disabled(loading)
+                    StableProgress(active: loading)
+                }
+                Text("An unconfirmed submission is not an approval request. Assistant never automatically repeats an action whose outcome is unknown.")
+                    .font(.callout).foregroundStyle(Theme.secondary)
                 if let error { ErrorBanner(message: error) }
-                ForEach(model.references.filter { $0.instanceID == model.health?.instanceID }) { reference in
+                if model.operations.isEmpty && model.unconfirmedReferences.isEmpty && error == nil && !loading {
+                    ContentUnavailableView("No operations yet", systemImage: "clock.arrow.circlepath",
+                                           description: Text("Server receipts for actions you take will appear here."))
+                }
+                ForEach(model.unconfirmedReferences) { reference in
                     ManagementPanel {
                         VStack(alignment: .leading, spacing: 8) {
                             OperationReceiptRow(reference: reference)
+                            if let status = model.receiptLookups[reference.id], status != "found" {
+                                Text(status == "expired" ?
+                                     "The server’s receipt has expired. Check the affected item before taking any further action." :
+                                        "No retained receipt matches this submission. This does not prove that the action failed; check the affected item before retrying.")
+                                    .font(.callout).foregroundStyle(.orange)
+                            }
                             DisclosureGroup("Submission details") {
                                 if let operationID = reference.operationID {
                                     Text(operationID).font(.caption.monospaced()).textSelection(.enabled)
                                 }
                                 Text(reference.key).font(.caption.monospaced()).textSelection(.enabled)
+                                Text(reference.id.uuidString).font(.caption.monospaced()).textSelection(.enabled)
                             }
                         }
                     }
@@ -309,6 +312,8 @@ struct OperationsView: View {
     }
 
     private func refresh() async {
+        loading = true
+        defer { loading = false }
         do { try await model.refreshOperations(); error = nil }
         catch { self.error = error.presentableMessage ?? self.error }
     }
