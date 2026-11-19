@@ -4,6 +4,7 @@ import Foundation
 enum SettingsPage: Hashable {
     case group(String)
     case instructions
+    case skills
     case app
 }
 

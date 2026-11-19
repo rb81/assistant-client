@@ -179,6 +179,10 @@ actor PreviewManagementAPI: ManagementAPI {
             ])])])
         } else if resource.hasPrefix("approvals") {
             value = .object(["approvals": .array([])])
+        } else if resource == "query", body?["action"] == .string("skills.list") {
+            value = .object(["total": .integer(1), "skills": .array([skill(includeBody: false)])])
+        } else if resource == "query", body?["action"] == .string("skills.read"), body?["arguments"]?["id"] == .string("EMAIL") {
+            value = skill(includeBody: true)
         } else if resource == "query", body?["action"] == .string("workspace.list") {
             value = .object(["entries": .array([.object([
                 "path": .string("notes"), "is_dir": .bool(true), "size_bytes": .integer(0)
@@ -285,6 +289,15 @@ actor PreviewManagementAPI: ManagementAPI {
             return try JSONEncoder().encode(JSONValue.object(configuration))
         }
         return try JSONEncoder().encode(value)
+    }
+
+    private func skill(includeBody: Bool) -> JSONValue {
+        var fields: [String: JSONValue] = [
+            "id": .string("EMAIL"), "title": .string("Email"), "description": .string("Draft and reply to email."),
+            "revision": .string("fixture-rev"), "locked": .bool(true), "overlay_for": .null
+        ]
+        if includeBody { fields["body"] = .string("Verify the recipient before composing the message.") }
+        return .object(fields)
     }
 
     private func setting(_ group: String, _ key: String, _ label: String, _ value: String, boolean: Bool = false,

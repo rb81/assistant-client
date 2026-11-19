@@ -2,6 +2,29 @@ import XCTest
 
 /// Native launch smoke test performs no server connection.
 final class AssistantUITests: XCTestCase {
+    /// Locked guidance is readable, but edits open a separate preference draft.
+    @MainActor
+    func testLockedSkillIsReadableAndCanStartPreferenceDraft() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-fixture"]
+        app.launch()
+        defer { app.terminate() }
+        let settings = app.buttons["nav-configuration"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        settings.click()
+        let skills = app.buttons["settings-section-assistant-skills"]
+        XCTAssertTrue(skills.waitForExistence(timeout: 10))
+        skills.click()
+        let email = app.buttons["skill-EMAIL"]
+        XCTAssertTrue(email.waitForExistence(timeout: 10))
+        email.click()
+        XCTAssertTrue(app.staticTexts["Verify the recipient before composing the message."].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["Edit skill"].exists)
+        app.buttons["Add preferences"].click()
+        XCTAssertTrue(app.textFields["Skill ID"].waitForExistence(timeout: 10))
+        XCTAssertEqual(app.textFields["Skill ID"].value as? String, "EMAIL.PREFERENCES")
+    }
+
     /// Settings keep one navigation column while lazy reads and saving preserve the draft.
     @MainActor
     func testSettingsPanesPreserveDraftsAndLayout() {

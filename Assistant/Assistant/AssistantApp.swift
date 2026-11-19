@@ -18,7 +18,7 @@ struct AssistantApp: App {
             let restoreCache = ProcessInfo.processInfo.arguments.contains("--ui-restore-cache")
             if !restoreCache { defaults.removePersistentDomain(forName: "assistant.ui-fixture") }
             let health = InstanceHealth(apiVersion: 2, instanceID: "fixture", name: "Assistant",
-                                        capabilities: ["configuration.read", "configuration.structured", "configuration.sections"], readOnly: false)
+                                        capabilities: ["configuration.read", "configuration.structured", "configuration.sections", "skills.manage"], readOnly: false)
             let fixture = ClientModel(defaults: defaults, api: PreviewManagementAPI(
                 chatDetails: ProcessInfo.processInfo.arguments.contains("--ui-chat-details"),
                 offline: restoreCache,

@@ -6,6 +6,23 @@ import XCTest
 
 /// Isolated transport and mutation tests never contact a real server or Docker installation.
 final class AssistantTests: XCTestCase {
+    /// Delete operations carry the reviewed revision and cannot be built for locked skills.
+    func testSkillDeletionUsesReviewedRevision() throws {
+        let editable = Data("""
+        {"id":"CUSTOM","title":"Custom","description":"An example","revision":"7","locked":false,"overlay_for":"EMAIL"}
+        """.utf8)
+        let skill = try Wire.decoder().decode(SkillEntry.self, from: editable)
+        XCTAssertEqual(skill.overlayFor, "EMAIL")
+        XCTAssertNil(skill.body)
+        XCTAssertEqual(skill.deletion()?["arguments"]?["revision"], .string("7"))
+        XCTAssertEqual(skill.deletion()?["confirmed"], .bool(true))
+
+        let locked = Data("""
+        {"id":"EMAIL","title":"Email","description":"Compose email","revision":"shipped","locked":true,"body":"Instructions"}
+        """.utf8)
+        XCTAssertNil(try Wire.decoder().decode(SkillEntry.self, from: locked).deletion())
+    }
+
     /// Only known bounded invalidations are accepted; incomplete and oversized frames cannot grow state.
     func testEventParserBoundsAndSeparatesFrames() throws {
         var parser = ManagementEventParser()

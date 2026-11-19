@@ -1158,6 +1158,82 @@
     },
     "Your platform. One connection." : {
 
+    },
+    "%@ · Revision %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · Revision %2$@"
+          }
+        }
+      }
+    },
+    "Add preferences" : {
+
+    },
+    "Add skill" : {
+
+    },
+    "Delete skill" : {
+
+    },
+    "Delete skill…" : {
+
+    },
+    "Delete this skill?" : {
+
+    },
+    "Description" : {
+
+    },
+    "Edit skill" : {
+
+    },
+    "Inspect shipped workflows or publish custom guidance and preference overlays." : {
+
+    },
+    "Locked" : {
+
+    },
+    "No matching skills." : {
+
+    },
+    "Preferences for %@" : {
+
+    },
+    "Publish skill" : {
+
+    },
+    "Publish this skill revision?" : {
+
+    },
+    "Remove %@ from the active skill catalog?" : {
+
+    },
+    "Review & publish" : {
+
+    },
+    "Search skills" : {
+
+    },
+    "Skill ID" : {
+
+    },
+    "Skill instructions" : {
+
+    },
+    "Skills" : {
+
+    },
+    "This guidance can be loaded in future Assistant tasks. Do not include secrets." : {
+
+    },
+    "This server does not support skill management." : {
+
+    },
+    "Title" : {
+
     }
   },
   "version" : "1.0"

@@ -88,6 +88,7 @@ struct ConfigurationView: View {
                         }
                         if scope == .assistant {
                             sectionButton(String(localized: "Instructions"), page: .instructions, in: scope, identifier: "instructions")
+                            sectionButton(String(localized: "Skills"), page: .skills, in: scope, identifier: "skills")
                         }
                     }
                 }
@@ -155,6 +156,7 @@ struct ConfigurationView: View {
                         switch page {
                         case .group(let id): groupPage(id)
                         case .instructions: instructionsEditor
+                        case .skills: SkillsSettingsView(model: model)
                         case .app: AppPreferencesView(model: model)
                         }
                     }
@@ -478,7 +480,7 @@ struct ConfigurationView: View {
         let current = loadGeneration
         do {
             switch page {
-            case .app: return
+            case .app, .skills: return
             case .instructions:
                 guard !instructionsLoaded, !instructionsLoading else { return }
                 instructionsLoading = true
