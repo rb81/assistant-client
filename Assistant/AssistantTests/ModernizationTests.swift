@@ -19,7 +19,8 @@ final class ModernizationTests: XCTestCase {
         {"revision":"r1","setup_complete":true,"instructions":"","setup_notice":"",
          "groups":[
           {"id":"catalog:search","title":"Web search providers","basic":true,"destination":"models"},
-          {"id":"catalog:web_fetch","title":"Web page reader","basic":true,"destination":"models"}],
+          {"id":"catalog:web_fetch","title":"Web page reader","basic":true,"destination":"models",
+           "advanced_title":"External reader & limits"}],
          "settings":[
           {"group":"catalog:search","key":"AGENT_SEARCH_PRIMARY_PROVIDER","label":"Preferred search provider",
            "value":"exa","secret":false,"boolean":false,"editable":true,
@@ -28,8 +29,10 @@ final class ModernizationTests: XCTestCase {
           {"group":"catalog:search","key":"AGENT_SEARCH_EXA_API_KEY","label":"Exa API key (optional)",
            "value":"","secret":true,"boolean":false,"editable":true,
            "metadata":{"level":"basic","section":"Search providers"}},
-          {"group":"catalog:web_fetch","key":"AGENT_WEB_FETCH_API_TOKEN","label":"Crawl4AI API token",
-           "value":"","secret":true,"boolean":false,"editable":true,"metadata":{"level":"basic"}}]}
+          {"group":"catalog:web_fetch","key":"AGENT_WEB_FETCH_ENABLED","label":"Web page reader",
+           "value":"false","secret":false,"boolean":true,"editable":true,"metadata":{"level":"basic"}},
+          {"group":"catalog:web_fetch","key":"AGENT_WEB_FETCH_API_TOKEN","label":"External Crawl4AI API token",
+           "value":"","secret":true,"boolean":false,"editable":true,"metadata":{"level":"advanced"}}]}
         """.utf8))
         let navigation = SettingsNavigation(configuration)
         XCTAssertEqual(navigation.pages(in: .models).map(\.id), ["catalog:search", "catalog:web_fetch"])
@@ -39,7 +42,15 @@ final class ModernizationTests: XCTestCase {
         XCTAssertEqual(preferred.choices, ["openrouter", "exa"])
         XCTAssertEqual(preferred.choiceLabel(preferred.value), "Exa (direct)")
         XCTAssertTrue(try XCTUnwrap(providers.fields.last).secret)
-        XCTAssertTrue(try XCTUnwrap(navigation.fields(in: "catalog:web_fetch").first).secret)
+        let reader = try XCTUnwrap(navigation.group("catalog:web_fetch"))
+        let readerFields = navigation.fields(in: reader.id)
+        let toggle = try XCTUnwrap(readerFields.first)
+        let token = try XCTUnwrap(readerFields.last)
+        XCTAssertTrue(toggle.boolean)
+        XCTAssertEqual(navigation.category(for: reader, field: toggle), .models)
+        XCTAssertTrue(token.secret)
+        XCTAssertEqual(navigation.category(for: reader, field: token), .advanced)
+        XCTAssertEqual(navigation.title(reader, in: .advanced), "External reader & limits")
     }
 
     @MainActor
