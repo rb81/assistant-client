@@ -77,6 +77,14 @@ final class AssistantUITests: XCTestCase {
         let save = app.buttons["Save changes"]
         XCTAssertTrue(save.waitForExistence(timeout: 5), "Review must expose the draft's save actions")
         XCTAssertTrue(save.isHittable)
+        app.buttons["Discard draft…"].click()
+        let discard = app.buttons["Discard draft"]
+        XCTAssertTrue(discard.waitForExistence(timeout: 5))
+        discard.click()
+        XCTAssertTrue(savedStatus.waitForExistence(timeout: 5))
+        waitUntilEnabled(name)
+        XCTAssertNotEqual(name.value as? String, "Footer draft")
+        XCTAssertFalse(save.exists)
     }
 
     @MainActor
@@ -195,6 +203,12 @@ final class AssistantUITests: XCTestCase {
         let applied = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "exists == false"), object: banner)
         XCTAssertEqual(XCTWaiter.wait(for: [applied], timeout: 10), .completed)
+        app.buttons["nav-inbox"].click()
+        settings.click()
+        app.buttons["settings-section-connections-zoom"].click()
+        XCTAssertTrue(app.staticTexts["Enable Zoom"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.staticTexts["Settings changed on the server. Save or discard your draft, then reload."].exists)
+        XCTAssertFalse(app.staticTexts["Settings changed on the server. Your draft is preserved; discard it and reload before saving."].exists)
     }
 
     /// Both sides offer whole-message copy, including replies with fenced code.

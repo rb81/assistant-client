@@ -9,6 +9,7 @@ actor PreviewManagementAPI: ManagementAPI {
     private var assistantName = "Assistant"
     private var assistantInstructions = "Be thoughtful, clear, and useful."
     private var pendingSettings: [String: JSONValue] = [:]
+    private var configurationRevision = 0
     private let chatDetails: Bool
     private let offline: Bool
     private let liveChat: Bool
@@ -224,16 +225,16 @@ actor PreviewManagementAPI: ManagementAPI {
             ])])
         } else if resource == "configuration/activation" {
             value = .object([
-                "revision": .string(String(repeating: "a", count: 64)), "tracked": .bool(true),
+                "revision": .string(String(format: "%064d", configurationRevision)), "tracked": .bool(true),
                 "pending": .bool(!pendingSettings.isEmpty), "requires_rebuild": .bool(false),
                 "changes": .array(pendingSettings.keys.sorted().compactMap { pendingSettings[$0] })
             ])
         } else if resource == "configuration/instructions" {
-            value = .object(["revision": .string(String(repeating: "a", count: 64)),
+            value = .object(["revision": .string(String(format: "%064d", configurationRevision)),
                              "instructions": .string(assistantInstructions)])
         } else if resource == "configuration" || resource == "configuration/catalog" || resource.hasPrefix("configuration/settings") {
             value = .object([
-                "revision": .string(String(repeating: "a", count: 64)), "setup_complete": .bool(true),
+                "revision": .string(String(format: "%064d", configurationRevision)), "setup_complete": .bool(true),
                 "instructions": .string(assistantInstructions), "setup_notice": .string(""),
                 "agent_yaml": .string("agent:\n  identity:\n    name: Assistant\n"),
                 "agent_yaml_backups": .array([]),
@@ -313,6 +314,10 @@ actor PreviewManagementAPI: ManagementAPI {
             }
             if body?["apply"] == .bool(true) || action == "service.lifecycle" && body?["action"] == .string("apply") {
                 pendingSettings = [:]
+            }
+            if action == "configuration.save" ||
+                (action == "service.lifecycle" && ["apply", "start"].contains(body?["action"]?.string ?? "")) {
+                configurationRevision += 1
             }
             value = .object([
                 "id": .string("fixture-operation"), "action": .string(action), "state": .string("succeeded"),

@@ -456,6 +456,14 @@ final class ClientModel {
         )
         references.append(reference)
         try saveReferences()
+        defer {
+            if action == "service.lifecycle", current == generation {
+                invalidateResources()
+                if payload["service"] == nil, ["start", "apply"].contains(payload["action"]?.string ?? "") {
+                    configurationVisit = UUID()
+                }
+            }
+        }
         var operation: ManagementOperation
         do {
             operation = try await api.submit(payload, key: reference.key)

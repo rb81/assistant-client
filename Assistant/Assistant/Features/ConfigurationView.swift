@@ -24,10 +24,12 @@ struct ConfigurationView: View {
     @State private var preview: JSONValue?
     @State private var reviewedPayload: [String: JSONValue]?
     @State private var confirming = false
+    @State private var confirmingDiscard = false
     @State private var apply = false
     @State private var error: String?
     @State private var notice: String?
     @State private var busy = false
+    @State private var refreshAfterBusy = false
     @State private var searchFocus: String?
     @State private var expandedAccounts: Set<String> = []
     @State private var offerFirstChat = false
@@ -50,6 +52,12 @@ struct ConfigurationView: View {
         }
         .task { await load() }
         .task(id: model.configurationVisit) { await checkForExternalChanges() }
+        .onChange(of: busy) { _, isBusy in
+            if !isBusy && refreshAfterBusy {
+                refreshAfterBusy = false
+                Task { await checkForExternalChanges() }
+            }
+        }
         .task(id: page) { await loadPage() }
         .onChange(of: search) { if !search.isEmpty { searchFocus = nil } }
         .confirmationDialog(apply ? "Save and activate reviewed changes?" : "Save reviewed changes?",
@@ -58,6 +66,12 @@ struct ConfigurationView: View {
         } message: {
             Text(apply ? "Affected application services will be started or recreated. Active work may be interrupted. Enabled connections may begin processing messages." :
                  "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready.")
+        }
+        .alert("Discard unsaved configuration changes?", isPresented: $confirmingDiscard) {
+            Button("Discard draft", role: .destructive) { Task { await discardDraft() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This discards only edits on this Mac. Settings already saved on the server are kept.")
         }
     }
 
@@ -256,6 +270,9 @@ struct ConfigurationView: View {
                         if let notice { Text(notice).textSelection(.enabled) }
                         Button("Done") { showingFeedback = false }
                     }.padding().frame(width: 420)
+                }
+                if model.configurationDirty {
+                    Button("Discard draft…") { confirmingDiscard = true }.disabled(busy)
                 }
                 if canSave {
                     if configuration?.setupComplete == false {
@@ -521,9 +538,13 @@ struct ConfigurationView: View {
 
     /// Catalog metadata can change after a server update even when saved values have not.
     private func checkForExternalChanges() async {
-        guard configuration != nil, !busy else { return }
+        guard !busy else { refreshAfterBusy = true; return }
+        guard configuration != nil else { return }
+        let current = loadGeneration
         do {
             let latest = try await model.configurationCatalog()
+            guard current == loadGeneration else { return }
+            guard !busy else { refreshAfterBusy = true; return }
             guard latest != catalogSnapshot else { return }
             let updated = try Wire.decoder().decode(FullConfiguration.self, from: JSONEncoder().encode(latest))
             if updated.revision == configuration?.revision {
@@ -567,7 +588,22 @@ struct ConfigurationView: View {
         if model.configurationDirty { notice = nil }
     }
 
-    /// A successful reload is the only point that clears a saved draft.
+    /// Discard local edits without modifying saved server values or their activation state.
+    private func discardDraft() async {
+        model.invalidateResources()
+        clearDraft()
+        notice = nil
+        await load()
+    }
+
+    /// Use only after an explicit discard, a confirmed save, or an uncontested reload.
+    private func clearDraft() {
+        values = [:]
+        instructions = instructionsOriginal
+        acknowledge = false
+        invalidatePreview()
+    }
+
     private func load(catalog: JSONValue? = nil) async {
         guard catalog == nil || !model.configurationDirty else { return }
         loadGeneration = UUID()
@@ -592,8 +628,7 @@ struct ConfigurationView: View {
             instructions = ""; instructionsOriginal = ""; instructionsLoaded = false
             loadedGroups = []; loadedFields = [:]
             reconcilePage()
-            values = [:]; acknowledge = false; preview = nil; reviewedPayload = nil
-            model.configurationDirty = false
+            clearDraft()
             error = nil
             async let pageLoad: () = loadPage()
             async let credentialsLoad: () = loadCredentials()
@@ -622,8 +657,10 @@ struct ConfigurationView: View {
     }
 
     private func loadModelAccess() async {
+        let current = loadGeneration
         do {
             let result = try await model.cachedRead("configuration/settings?group=models")
+            guard current == loadGeneration, !Task.isCancelled else { return }
             guard result["revision"]?.string == configuration?.revision else {
                 throw ClientError.operationFailed(String(localized: "Settings changed on the server. Reload before editing."))
             }
@@ -634,7 +671,10 @@ struct ConfigurationView: View {
                 return (key, value)
             })
             modelAccessLoaded = true
-        } catch { self.error = error.presentableMessage ?? self.error }
+        } catch {
+            guard current == loadGeneration, !Task.isCancelled else { return }
+            self.error = error.presentableMessage ?? self.error
+        }
     }
 
     /// Lazy page reads retain the catalog revision, so external edits never silently merge with a draft.
@@ -701,6 +741,7 @@ struct ConfigurationView: View {
         let starting = configuration?.setupComplete == false && apply
         do {
             _ = try await model.perform(.object(payload))
+            clearDraft()
             model.recordActivation(apply ? .active : .pending)
             notice = apply ? String(localized: "Configuration saved and application services activated.") :
                 String(localized: "Saved. Choose Review & Apply when you are ready.")

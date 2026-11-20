@@ -94,6 +94,34 @@ final class ModernizationTests: XCTestCase {
     }
 
     @MainActor
+    func testApplyingSavedSettingsRefreshesCachedConfigurationAndMountedSettings() async throws {
+        let api = ChatAPI()
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: health)
+        let previousVisit = model.configurationVisit
+        await api.setSettingsCatalog(.object(["revision": .string("before")]))
+        await api.setAssistantName("Before")
+        let oldCatalog = try await model.cachedRead("configuration/catalog")
+        XCTAssertEqual(oldCatalog["revision"], .string("before"))
+        let before = try await model.cachedRead("configuration/settings?group=identity")
+        XCTAssertEqual(before["settings"]?.array?.first?["value"], .string("Before"))
+        await api.setSettingsCatalog(.object(["revision": .string("after")]))
+        await api.setAssistantName("After")
+
+        _ = try await model.perform(.object([
+            "operation": .string("service.lifecycle"), "action": .string("apply"), "confirmed": .bool(true)
+        ]))
+        let after = try await model.cachedRead("configuration/settings?group=identity")
+        XCTAssertEqual(after["settings"]?.array?.first?["value"], .string("After"))
+        let newCatalog = try await model.cachedRead("configuration/catalog")
+        XCTAssertEqual(newCatalog["revision"], .string("after"))
+        XCTAssertNotEqual(model.configurationVisit, previousVisit)
+        let resources = await api.resources
+        XCTAssertEqual(resources.filter { $0 == "configuration/settings?group=identity" }.count, 2)
+        XCTAssertEqual(resources.filter { $0 == "configuration/catalog" }.count, 2)
+    }
+
+    @MainActor
     func testCopyPreservesWholeMessageSourceOnNativePasteboard() {
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }

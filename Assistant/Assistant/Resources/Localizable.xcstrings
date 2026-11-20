@@ -409,6 +409,12 @@
     "Discard and quit" : {
 
     },
+    "Discard draft" : {
+
+    },
+    "Discard draft…" : {
+
+    },
     "Discard unsaved configuration changes and disconnect?" : {
 
     },
@@ -1425,6 +1431,9 @@
 
     },
     "This review includes decisions that require a newer client." : {
+
+    },
+    "This discards only edits on this Mac. Settings already saved on the server are kept." : {
 
     },
     "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready." : {
