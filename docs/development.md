@@ -51,6 +51,11 @@ and [TN3179](https://developer.apple.com/documentation/technotes/tn3179-understa
 
 ## Tests
 
+When adding server-owned settings, follow the server's
+[settings checklist](https://github.com/rb81/assistant/blob/main/docs/developers/settings.md).
+Use the Management API catalog for field presentation and keep the server's
+option values unchanged when writing a draft.
+
 Use **Product > Test** for unit tests and disconnected/connected UI tests.
 Inject `ManagementAPI` fixtures; do not use production credentials or SSH hosts.
 The explicit Debug-only connected fixture covers navigation, sending, code

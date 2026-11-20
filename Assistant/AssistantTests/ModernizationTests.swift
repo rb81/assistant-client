@@ -12,6 +12,36 @@ final class ModernizationTests: XCTestCase {
                        capabilities: ["configuration.read"], readOnly: false)
     }
 
+    func testWebAccessSettingsUseServerNavigationChoicesAndSecretMetadata() throws {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let configuration = try decoder.decode(FullConfiguration.self, from: Data("""
+        {"revision":"r1","setup_complete":true,"instructions":"","setup_notice":"",
+         "groups":[
+          {"id":"catalog:search","title":"Web search providers","basic":true,"destination":"models"},
+          {"id":"catalog:web_fetch","title":"Web page reader","basic":true,"destination":"models"}],
+         "settings":[
+          {"group":"catalog:search","key":"AGENT_SEARCH_PRIMARY_PROVIDER","label":"Preferred search provider",
+           "value":"exa","secret":false,"boolean":false,"editable":true,
+           "metadata":{"level":"basic","section":"Search providers","choices":["openrouter","exa"],
+                       "choice_labels":{"openrouter":"OpenRouter","exa":"Exa (direct)"}}},
+          {"group":"catalog:search","key":"AGENT_SEARCH_EXA_API_KEY","label":"Exa API key (optional)",
+           "value":"","secret":true,"boolean":false,"editable":true,
+           "metadata":{"level":"basic","section":"Search providers"}},
+          {"group":"catalog:web_fetch","key":"AGENT_WEB_FETCH_API_TOKEN","label":"Crawl4AI API token",
+           "value":"","secret":true,"boolean":false,"editable":true,"metadata":{"level":"basic"}}]}
+        """.utf8))
+        let navigation = SettingsNavigation(configuration)
+        XCTAssertEqual(navigation.pages(in: .models).map(\.id), ["catalog:search", "catalog:web_fetch"])
+        let providers = try XCTUnwrap(navigation.sections(in: "catalog:search").first)
+        XCTAssertEqual(providers.title, "Search providers")
+        let preferred = try XCTUnwrap(providers.fields.first)
+        XCTAssertEqual(preferred.choices, ["openrouter", "exa"])
+        XCTAssertEqual(preferred.choiceLabel(preferred.value), "Exa (direct)")
+        XCTAssertTrue(try XCTUnwrap(providers.fields.last).secret)
+        XCTAssertTrue(try XCTUnwrap(navigation.fields(in: "catalog:web_fetch").first).secret)
+    }
+
     @MainActor
     func testReadCacheCoalescesRequestsAndInvalidatesExplicitly() async throws {
         let api = ChatAPI()
