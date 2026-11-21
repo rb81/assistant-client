@@ -145,7 +145,7 @@ struct ManagementOperation: Decodable, Identifiable, Sendable {
 }
 
 /// Inbox deliveries are deduplicated by server ID, not message content.
-struct ClientMessage: Decodable, Identifiable, Sendable {
+struct ClientMessage: Codable, Identifiable, Sendable, Equatable {
     let id: Int
     let taskID: Int?
     let purpose: String

@@ -68,6 +68,7 @@ final class ClientModel {
     private(set) var api: (any ManagementAPI)?
     private let connection = SSHConnection()
     private let defaults: UserDefaults
+    private let receiptStore: any DeliveryReceiptStoring
     private let notificationDelivery: any ClientNotificationDelivering
     private(set) var requestDurations: [String: TimeInterval] = [:]
     var preferences: UserDefaults { defaults }
@@ -98,8 +99,10 @@ final class ClientModel {
     /// Loads only non-secret metadata and reports malformed local state explicitly.
     init(defaults: UserDefaults = .standard, api: (any ManagementAPI)? = nil, health: InstanceHealth? = nil,
          modelCatalogLoader: any OpenRouterCatalogLoading = PublicOpenRouterCatalog(),
-         notificationDelivery: (any ClientNotificationDelivering)? = nil) {
+         notificationDelivery: (any ClientNotificationDelivering)? = nil,
+         receiptStore: any DeliveryReceiptStoring = DeliveryReceiptStore()) {
         self.defaults = defaults
+        self.receiptStore = receiptStore
         self.notificationDelivery = notificationDelivery ?? SystemNotificationDelivery()
         self.chats = ConversationModel(defaults: defaults)
         self.reminderRuns = ConversationModel(defaults: defaults, reminderHistory: true)
@@ -559,24 +562,32 @@ final class ClientModel {
         historyCursor = history.nextBeforeID
     }
 
-    /// Called by the rendered inbox; delivery acknowledgments are not human read receipts.
-    func acknowledgeRendered(ids renderedIDs: [Int]? = nil) async {
-        guard let api, let clientID, !offeredIDs.isEmpty else { return }
+    /// Persist first, then acknowledge transport receipt without changing human unread state.
+    func receiveDeliveries(_ incoming: [ClientMessage]) async throws {
+        guard let api, let clientID, let instance = health?.instanceID else { throw ClientError.unavailable }
         let current = generation
-        let ids = offeredIDs.filter { renderedIDs?.contains($0) ?? true }
-        guard !ids.isEmpty else { return }
-        do {
-            let data = try await api.request(
-                "clients/\(clientID)/acknowledgments",
-                body: .object(["message_ids": .array(ids.map { .integer(Int64($0)) })]), key: nil
-            )
-            let acknowledgment = try Wire.decoder().decode(ClientAcknowledgment.self, from: data)
-            guard generation == current else { return }
-            offeredIDs.removeAll { acknowledgment.acknowledged.contains($0) }
-            guard ids.allSatisfy(acknowledgment.acknowledged.contains) else { throw ClientError.unacknowledged }
-        } catch {
-            if generation == current, let message = error.presentableMessage { pollingError = message }
+        if !incoming.isEmpty { try await receiptStore.save(incoming, instance: instance, client: clientID) }
+        guard generation == current else { throw CancellationError() }
+        merge(incoming)
+        let ids = incoming.map(\.id)
+        if offeredIDs != ids { offeredIDs = ids }
+        guard !ids.isEmpty else {
+            try await receiptStore.remove(instance: instance, client: clientID)
+            return
         }
+        let acknowledgment = try await api.acknowledge(client: clientID, ids: ids)
+        guard generation == current else { throw CancellationError() }
+        offeredIDs.removeAll { acknowledgment.acknowledged.contains($0) }
+        guard ids.allSatisfy(acknowledgment.acknowledged.contains) else { throw ClientError.unacknowledged }
+        try await receiptStore.remove(instance: instance, client: clientID)
+    }
+
+    /// Clear transcript and pending-receipt caches without touching server history or human delivery state.
+    func clearConversationCache() async {
+        chats.clearSavedCache()
+        reminderRuns.clearSavedCache()
+        do { try await receiptStore.clear() }
+        catch { self.error = error.presentableMessage }
     }
 
     /// Polls at the server cadence; recoverable connection failures rediscover the same installation.
@@ -598,6 +609,9 @@ final class ClientModel {
                         throw ClientError.malformedResponse
                     }
                     clientID = identifier
+                    let buffered = try await receiptStore.load(instance: instance, client: identifier)
+                    guard generation == current else { return }
+                    merge(buffered)
                     try await loadHistory()
                 }
                 guard let clientID else { throw ClientError.malformedResponse }
@@ -607,16 +621,17 @@ final class ClientModel {
                     throw ClientError.malformedResponse
                 }
                 let known = Set(messages.map(\.id))
+                try await receiveDeliveries(result.messages)
+                guard generation == current else { return }
                 for message in result.messages where !known.contains(message.id) {
                     await addUpdate(id: "delivery:\(message.id)", title: message.taskID == nil ?
                                     String(localized: "New installation notice") : String(localized: "New reply from \(assistantName)"),
                                     taskID: message.taskID, category: "replies")
                 }
-                merge(result.messages)
-                offeredIDs = result.messages.map(\.id)
                 lastPoll = Date()
                 pollingError = nil
-                status = String(localized: "Connected")
+                let connected = String(localized: "Connected")
+                if status != connected { status = connected }
                 failures = 0
                 if !liveUpdates, lastApprovalRefresh.map({ Date().timeIntervalSince($0) >= 30 }) ?? true {
                     requestApprovalRefresh(generation: current)
@@ -768,7 +783,8 @@ final class ClientModel {
     private func merge(_ incoming: [ClientMessage]) {
         var indexed = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
         for message in incoming { indexed[message.id] = message }
-        messages = indexed.values.sorted { $0.id < $1.id }
+        let updated = indexed.values.sorted { $0.id < $1.id }
+        if messages != updated { messages = updated }
     }
 
     /// Retained in-app feedback stores no message bodies or transport credentials.

@@ -29,11 +29,10 @@ struct InboxView: View {
         return model.messages.filter { $0.taskID == task }.map(\.id)
     }
 
-    /// Late inbox offers must retrigger acknowledgment even when the transcript is unchanged.
+    /// Read markers advance only once a transcript is rendered in the active scene.
     private struct DeliveryRender: Hashable {
         let thread: String?
         let version: String?
-        let offered: [Int]
         let rendered: [String]
         let active: Bool
     }
@@ -81,7 +80,8 @@ struct InboxView: View {
                         }
                     }.frame(height: 32).padding(12).background(Theme.panel)
                 } else {
-                    composer.fixedSize(horizontal: false, vertical: true)
+                    ConversationComposer(model: model, chat: chat, confirmingRoute: $confirmingRoute)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }.frame(minWidth: 420)
         }
@@ -281,11 +281,9 @@ struct InboxView: View {
                 }
             }
             .task(id: DeliveryRender(thread: chat.selectedThread, version: chat.renderedVersion,
-                                     offered: model.offeredIDs, rendered: chat.messages.map(\.id),
+                                     rendered: chat.messages.map(\.id),
                                      active: scenePhase == .active)) {
                 if scenePhase == .active { chat.markRendered() }
-                let rendered = Set(chat.messages.filter { $0.channel == "client" && !$0.incoming }.map(\.wireID))
-                await model.acknowledgeRendered(ids: model.offeredIDs.filter(rendered.contains))
             }
         }
     }
@@ -426,10 +424,50 @@ struct InboxView: View {
         return date.formatted(date: .abbreviated, time: .shortened)
     }
 
-    /// The composer needs no task IDs or workstream controls, and supports a keyboard send action.
-    private var composer: some View {
-        @Bindable var chat = self.chat
-        return VStack(alignment: .leading, spacing: 10) {
+    /// Blockers and preservation promises come from the server, not a local optimistic delete.
+    private var deletionReview: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Delete task data?").font(.title2.weight(.semibold))
+            Text("The conversation, attachments, and workstream are kept. Execution details are removed and replaced with a read-only deletion marker.")
+            if let deletionPreview {
+                if deletionPreview["deletable"] != .bool(true) {
+                    ErrorBanner(message: String(localized: "Deletion is blocked while related work is active."))
+                    PreviewText(value: deletionPreview["blockers"] ?? .array([]))
+                }
+                HStack {
+                    Spacer()
+                    Button("Cancel") { self.deletionPreview = nil }
+                    Button("Delete task data", role: .destructive) {
+                        guard let task = deletionPreview["task_id"],
+                              let digest = deletionPreview["preview_digest"] else { return }
+                        self.deletionPreview = nil
+                        Task {
+                            chat.sending = true
+                            defer { chat.sending = false }
+                            do {
+                                _ = try await model.perform(.object([
+                                    "operation": .string("task.delete"), "task_id": task,
+                                    "preview_digest": digest, "confirmed": .bool(true)
+                                ]))
+                                try await chat.loadConversations(model)
+                                try await chat.refresh(model)
+                            } catch { chat.error = error.presentableMessage ?? chat.error }
+                        }
+                    }.disabled(deletionPreview["deletable"] != .bool(true))
+                }
+            }
+        }.padding(24).frame(width: 560)
+    }
+}
+
+/// Draft observation stays inside the composer so typing never rebuilds the transcript or sidebar.
+private struct ConversationComposer: View {
+    let model: ClientModel
+    @Bindable var chat: ConversationModel
+    @Binding var confirmingRoute: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
             TextEditor(text: $chat.draft).font(.body).scrollContentBackground(.hidden)
                 .frame(minHeight: 65, maxHeight: 140)
                 .padding(10)
@@ -465,41 +503,6 @@ struct InboxView: View {
         }
         .padding(16).background(Theme.panel)
         .disabled(chat.sending || chat.selected?.deleted == true)
-    }
-
-    /// Blockers and preservation promises come from the server, not a local optimistic delete.
-    private var deletionReview: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Delete task data?").font(.title2.weight(.semibold))
-            Text("The conversation, attachments, and workstream are kept. Execution details are removed and replaced with a read-only deletion marker.")
-            if let deletionPreview {
-                if deletionPreview["deletable"] != .bool(true) {
-                    ErrorBanner(message: String(localized: "Deletion is blocked while related work is active."))
-                    PreviewText(value: deletionPreview["blockers"] ?? .array([]))
-                }
-                HStack {
-                    Spacer()
-                    Button("Cancel") { self.deletionPreview = nil }
-                    Button("Delete task data", role: .destructive) {
-                        guard let task = deletionPreview["task_id"],
-                              let digest = deletionPreview["preview_digest"] else { return }
-                        self.deletionPreview = nil
-                        Task {
-                            chat.sending = true
-                            defer { chat.sending = false }
-                            do {
-                                _ = try await model.perform(.object([
-                                    "operation": .string("task.delete"), "task_id": task,
-                                    "preview_digest": digest, "confirmed": .bool(true)
-                                ]))
-                                try await chat.loadConversations(model)
-                                try await chat.refresh(model)
-                            } catch { chat.error = error.presentableMessage ?? chat.error }
-                        }
-                    }.disabled(deletionPreview["deletable"] != .bool(true))
-                }
-            }
-        }.padding(24).frame(width: 560)
     }
 }
 

@@ -408,6 +408,29 @@ final class AssistantUITests: XCTestCase {
         app.terminate()
     }
 
+    /// Live transcript updates must preserve the editor's draft, insertion point, and frame.
+    @MainActor
+    func testTypingPreservesDraftAndGeometryDuringLiveUpdates() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-fixture", "--ui-live-chat", "-chats.showToolCalls", "YES"]
+        app.launch()
+        defer { app.terminate() }
+        let thread = app.buttons["chat-thread-7"]
+        XCTAssertTrue(thread.waitForExistence(timeout: 10))
+        thread.click()
+        let editor = app.textViews["Message Assistant"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 10))
+        let frame = editor.frame
+        editor.click()
+        let first = "Keep this draft intact while background updates arrive. "
+        editor.typeText(first)
+        let latest = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "live_tool_3")).firstMatch
+        XCTAssertTrue(latest.waitForExistence(timeout: 20))
+        editor.typeText("Continue at the same insertion point.")
+        XCTAssertEqual(editor.value as? String, first + "Continue at the same insertion point.")
+        XCTAssertEqual(editor.frame, frame)
+    }
+
     /// Relaunch with all API reads failing proves the cache is on disk, not just shared model memory.
     @MainActor
     func testConversationCacheSurvivesRelaunchAndSettingsClear() {

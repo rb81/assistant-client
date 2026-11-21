@@ -50,7 +50,7 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
 }
 
 /// HTTP transport retains tokens only in native session memory.
-final class HTTPManagementAPI: ManagementAPI {
+actor HTTPManagementAPI: ManagementAPI {
     private let baseURL: URL
     private let token: String
     private let session: URLSession
@@ -78,7 +78,7 @@ final class HTTPManagementAPI: ManagementAPI {
     }
 
     /// Validates and creates a request without allowing arbitrary origins or paths.
-    func makeRequest(_ resource: String, body: JSONValue?, key: String?) throws -> URLRequest {
+    nonisolated func makeRequest(_ resource: String, body: JSONValue?, key: String?) throws -> URLRequest {
         let path = String(resource.split(separator: "?", maxSplits: 1).first ?? "")
         guard !resource.isEmpty, !resource.hasPrefix("/"), !resource.contains("://"),
               !(path.removingPercentEncoding ?? path).split(separator: "/").contains(".."),
@@ -181,7 +181,24 @@ final class HTTPManagementAPI: ManagementAPI {
     }
 }
 
+/// Approachable concurrency must not inherit the UI actor for response decoding.
+private actor ManagementResponseDecoder {
+    static let shared = ManagementResponseDecoder()
+
+    func decode<T: Decodable & Sendable>(_ type: T.Type, from data: Data) throws -> T {
+        try Wire.decoder().decode(type, from: data)
+    }
+}
+
 extension ManagementAPI {
+    /// Receipt acknowledgment is idempotent and separate from the Mac's human read markers.
+    func acknowledge(client: String, ids: [Int]) async throws -> ClientAcknowledgment {
+        try await ManagementResponseDecoder.shared.decode(
+            ClientAcknowledgment.self,
+            from: request("clients/\(client)/acknowledgments",
+                          body: .object(["message_ids": .array(ids.map { .integer(Int64($0)) })]), key: nil))
+    }
+
     /// Older servers and isolated fixtures retain the existing polling path.
     func events(after cursor: String?, receive: @Sendable (ManagementEvent) async -> Void) async throws {
         throw ClientError.serverOutdated(String(localized: "live updates"))
@@ -189,12 +206,12 @@ extension ManagementAPI {
 
     /// Reads a typed resource through the same bounded transport.
     func read<T: Decodable & Sendable>(_ resource: String, as type: T.Type) async throws -> T {
-        try Wire.decoder().decode(type, from: await request(resource, body: nil, key: nil))
+        try await ManagementResponseDecoder.shared.decode(type, from: request(resource, body: nil, key: nil))
     }
 
     /// Submits a typed operation with one key for the complete submission intent.
     func submit(_ payload: JSONValue, key: String) async throws -> ManagementOperation {
-        try Wire.decoder().decode(
+        try await ManagementResponseDecoder.shared.decode(
             ManagementOperation.self,
             from: await request("operations", body: payload, key: key)
         )

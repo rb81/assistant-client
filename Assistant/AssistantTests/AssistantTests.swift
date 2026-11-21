@@ -142,6 +142,84 @@ final class AssistantTests: XCTestCase {
         XCTAssertTrue(restored.chats.conversations.isEmpty)
     }
 
+    /// Stale rendering and context-menu rows cannot overwrite a newer persisted read watermark.
+    @MainActor
+    func testCachedRenderingCannotUndoExplicitReadOfNewerActivity() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let api = ChatAPI()
+        let model = ClientModel(defaults: defaults, api: api, health: health)
+        try await model.chats.loadConversations(model)
+        let original = try XCTUnwrap(model.chats.conversations.first)
+        model.chats.select(original)
+        try await model.chats.refresh(model)
+        model.chats.newChat()
+
+        let newer = Conversation(threadID: original.threadID, channel: original.channel, messageCount: 3,
+                                 openingMessage: original.openingMessage, lastActivityAt: "2026-11-16T10:02:00Z",
+                                 latestTaskID: original.latestTaskID, latestTaskStatus: "completed",
+                                 latestTaskSummary: nil, workstreamTitle: nil)
+        await api.setConversations([newer])
+        try await model.chats.loadConversations(model)
+        model.chats.setRead(true, conversation: newer)
+        model.chats.select(newer)
+        model.chats.markRendered()
+        model.chats.setRead(true, conversation: original)
+        XCTAssertFalse(model.chats.isUnread(newer))
+        XCTAssertFalse(ClientModel(defaults: defaults, health: health).chats.isUnread(newer))
+
+        let equivalent = Conversation(threadID: newer.threadID, channel: newer.channel, messageCount: 3,
+                                      openingMessage: newer.openingMessage, lastActivityAt: "2026-11-16T11:02:00+01:00",
+                                      latestTaskID: newer.latestTaskID, latestTaskStatus: "completed",
+                                      latestTaskSummary: nil, workstreamTitle: nil)
+        XCTAssertFalse(model.chats.isUnread(equivalent))
+    }
+
+    /// Fresh cached content must still fetch when the conversation list advertises newer activity.
+    @MainActor
+    func testOpeningUpdatedConversationDoesNotReuseOldReadVersion() async throws {
+        let api = ChatAPI()
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: health)
+        try await model.chats.loadConversations(model)
+        let original = try XCTUnwrap(model.chats.conversations.first)
+        model.chats.select(original)
+        try await model.chats.refresh(model)
+        model.chats.markRendered()
+        model.chats.newChat()
+
+        let newer = Conversation(threadID: original.threadID, channel: original.channel, messageCount: 3,
+                                 openingMessage: original.openingMessage, lastActivityAt: "2026-11-16T10:02:00Z",
+                                 latestTaskID: original.latestTaskID, latestTaskStatus: "completed",
+                                 latestTaskSummary: nil, workstreamTitle: nil)
+        await api.setConversations([newer])
+        try await model.chats.loadConversations(model)
+        model.chats.select(newer)
+        model.chats.markRendered()
+        XCTAssertTrue(model.chats.isUnread(newer))
+        let readsBefore = await api.resources.count
+        try await model.chats.refresh(model, maxAge: .seconds(30))
+        let readsAfter = await api.resources.count
+        XCTAssertGreaterThan(readsAfter, readsBefore)
+        model.chats.markRendered()
+        XCTAssertFalse(model.chats.isUnread(newer))
+    }
+
+    /// Quiet polling neither republishes the transcript nor rewrites its full disk snapshot.
+    @MainActor
+    func testUnchangedRefreshLeavesTranscriptCacheUntouched() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let api = ChatAPI()
+        let model = ClientModel(defaults: defaults, api: api, health: health)
+        try await model.chats.loadConversations(model)
+        model.chats.select(try XCTUnwrap(model.chats.conversations.first))
+        try await model.chats.refresh(model)
+        let cache = defaults.data(forKey: "assistant.chatCache.fixture")
+        XCTAssertNotNil(cache)
+        try await model.chats.loadConversations(model)
+        try await model.chats.refresh(model)
+        XCTAssertEqual(defaults.data(forKey: "assistant.chatCache.fixture"), cache)
+    }
+
     /// Reopened health pages retain an installation-scoped snapshot while their next read is in flight.
     @MainActor
     func testServiceSnapshotRendersWhileRefreshingAndDoesNotCrossInstances() async throws {
@@ -506,7 +584,7 @@ final class AssistantTests: XCTestCase {
 
     /// The newest transcript page loads first; older messages are explicitly requested.
     @MainActor
-    func testTranscriptLoadsLatestPageAndAcknowledgesOnlyRenderedDelivery() async throws {
+    func testTranscriptLoadsLatestPageAndRestoresCachedSelection() async throws {
         let api = ChatAPI()
         let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
                                 api: api, health: health)
@@ -522,9 +600,101 @@ final class AssistantTests: XCTestCase {
         XCTAssertTrue(model.chats.messages.isEmpty)
         model.chats.select(try XCTUnwrap(model.chats.conversations.first))
         XCTAssertEqual(model.chats.messages.first?.body, "Oldest page")
-        model.offeredIDs = [1, 2]
-        await model.acknowledgeRendered(ids: [2])
-        XCTAssertEqual(model.offeredIDs, [1])
+    }
+
+    /// Background receipt must succeed before acknowledgment, without advancing human unread markers.
+    @MainActor
+    func testBackgroundReceiptIsBufferedBeforeAcknowledgmentAndStaysUnread() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DeliveryReceiptStore(directory: directory)
+        let api = ChatAPI()
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: health, receiptStore: store)
+        model.clientID = String(repeating: "a", count: 32)
+        let client = try XCTUnwrap(model.clientID)
+        let instance = try XCTUnwrap(model.health?.instanceID)
+        let message = ClientMessage(id: 2, taskID: 7, purpose: "final", body: "Completed.",
+                                    createdAt: "2026-06-06T10:00:00Z", attachments: nil, status: "pending",
+                                    fallbackChannel: nil, error: nil)
+        try await model.chats.loadConversations(model)
+        let conversation = try XCTUnwrap(model.chats.conversations.first)
+        await api.pauseNextRead("clients/\(client)/acknowledgments")
+        let receiving = Task { try await model.receiveDeliveries([message]) }
+        defer {
+            receiving.cancel()
+            Task { await api.resumeRead("clients/\(client)/acknowledgments") }
+        }
+        for _ in 0..<200 {
+            if await api.readIsPaused("clients/\(client)/acknowledgments") { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let buffered = try await store.load(instance: instance, client: client)
+        XCTAssertEqual(buffered, [message])
+        XCTAssertTrue(model.chats.isUnread(conversation))
+        XCTAssertNil(model.chats.selectedThread)
+        await api.resumeRead("clients/\(client)/acknowledgments")
+        try await receiving.value
+        XCTAssertTrue(model.offeredIDs.isEmpty)
+        let confirmed = try await store.load(instance: instance, client: client)
+        XCTAssertTrue(confirmed.isEmpty)
+        XCTAssertTrue(model.chats.isUnread(conversation))
+    }
+
+    /// Failed local storage must never be presented to the server as successful receipt.
+    @MainActor
+    func testReceiptPersistenceFailurePreventsAcknowledgment() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("not a directory".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let api = ChatAPI()
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: health, receiptStore: DeliveryReceiptStore(directory: file))
+        model.clientID = String(repeating: "a", count: 32)
+        let message = ClientMessage(id: 2, taskID: 7, purpose: "final", body: "Completed.",
+                                    createdAt: "2026-06-06T10:00:00Z", attachments: nil, status: "pending",
+                                    fallbackChannel: nil, error: nil)
+        do {
+            try await model.receiveDeliveries([message])
+            XCTFail("A failed journal must prevent acknowledgment")
+        } catch {
+            let resources = await api.resources
+            XCTAssertFalse(resources.contains { $0.hasSuffix("/acknowledgments") })
+        }
+    }
+
+    /// Unconfirmed receipts survive reopening, remain installation-scoped, and obey cache clearing.
+    func testReceiptJournalRestoresOnlyItsInstallationAndClears() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = DeliveryReceiptStore(directory: directory)
+        let message = ClientMessage(id: 2, taskID: 7, purpose: "final", body: "Completed.",
+                                    createdAt: "2026-06-06T10:00:00Z", attachments: [.object(["name": .string("report.txt")])],
+                                    status: "pending", fallbackChannel: nil, error: nil)
+        try await store.save([message], instance: "installation-one", client: "client-one")
+        let reopened = DeliveryReceiptStore(directory: directory)
+        let restored = try await reopened.load(instance: "installation-one", client: "client-one")
+        let other = try await reopened.load(instance: "installation-two", client: "client-one")
+        XCTAssertEqual(restored, [message])
+        XCTAssertTrue(other.isEmpty)
+        try await reopened.clear()
+        let cleared = try await reopened.load(instance: "installation-one", client: "client-one")
+        XCTAssertTrue(cleared.isEmpty)
+    }
+
+    /// Independent read watermarks survive even when no transcript snapshot is retained.
+    @MainActor
+    func testReadWatermarkRestoresWithoutTranscriptSnapshot() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let api = ChatAPI()
+        let first = ClientModel(defaults: defaults, api: api, health: health)
+        try await first.chats.loadConversations(first)
+        let conversation = try XCTUnwrap(first.chats.conversations.first)
+        first.chats.setRead(true, conversation: conversation)
+        defaults.removeObject(forKey: "assistant.chatCache.\(health.instanceID)")
+        let reopened = ClientModel(defaults: defaults, api: api, health: health)
+        try await reopened.chats.loadConversations(reopened)
+        XCTAssertFalse(reopened.chats.isUnread(try XCTUnwrap(reopened.chats.conversations.first)))
     }
 
     /// Host validation rejects option injection and shell metacharacters but supports numeric hosts.

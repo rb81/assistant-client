@@ -119,6 +119,18 @@ Closing the client never stops services.
 
 Chat and reminder unread markers are local to this Mac, installation-scoped,
 persisted separately, and independent of delivery acknowledgments.
+Background polling buffers offered messages in an atomic, private,
+installation/client-scoped receipt journal before acknowledging them, without
+opening a chat or marking it read. Journals are bounded to 4 MiB per poll,
+restored after reconnect, and removed after confirmed acknowledgment; server
+history retains confirmed deliveries. **Clear conversation cache** also removes
+pending journals. Failed persistence or acknowledgment is reported, not treated
+as delivery success; reoffered receipt acknowledgments are idempotent.
+Read watermarks never regress when an older cached transcript renders, and
+fresh caches are reused only while their conversation version still matches.
+HTTP streaming, response decoding, and transcript-cache encoding run on
+background actors. Quiet refreshes retain unchanged message arrays and disk
+snapshots; draft observation is isolated in the composer.
 Service inventories are cached per installation and refreshed every ten seconds
 while Connections is open; cached statuses are not proof of current health.
 Transient inventory failures get three read attempts (250/500 ms backoff)

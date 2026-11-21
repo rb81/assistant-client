@@ -118,9 +118,5 @@ struct ActivityView: View {
         }
         .onAppear { model.markUpdatesSeen() }
         .onChange(of: model.activityUpdates.count) { model.markUpdatesSeen() }
-        .task(id: model.offeredIDs) {
-            let notices = Set(model.messages.filter { $0.taskID == nil }.map(\.id))
-            await model.acknowledgeRendered(ids: model.offeredIDs.filter(notices.contains))
-        }
     }
 }

@@ -228,7 +228,7 @@ enum ServerDate {
 }
 
 /// A conversation's last loaded transcript, shown immediately when the conversation is reopened.
-private struct CachedTranscript: Codable {
+private struct CachedTranscript: Codable, Sendable {
     var messages: [ChatMessage]
     var totalMessages: Int
     var messagePages: Int
@@ -239,11 +239,23 @@ private struct CachedTranscript: Codable {
 }
 
 /// Disk snapshots are partitioned by verified installation identity and contain no transport credentials.
-private struct ConversationCache: Codable {
+private struct ConversationCache: Codable, Sendable {
     var conversations: [Conversation]
     var transcripts: [String: CachedTranscript]
     var readVersions: [String: String]? = nil
     var scope: String? = nil
+}
+
+/// Serializes and decodes conversation payloads away from the UI actor.
+private actor ConversationCodec {
+    func decode<T: Decodable & Sendable>(_ value: JSONValue, as type: T.Type, wire: Bool = true) throws -> T {
+        let data = try JSONEncoder().encode(value)
+        return try (wire ? Wire.decoder() : JSONDecoder()).decode(type, from: data)
+    }
+
+    func encode(_ cache: ConversationCache) throws -> Data {
+        try JSONEncoder().encode(cache)
+    }
 }
 
 /// Server-backed conversations retain unsent text only in this connection's memory.
@@ -288,6 +300,8 @@ final class ConversationModel {
     private var manuallyUnreadSelection: String?
     private let defaults: UserDefaults
     private var cacheKey: String?
+    private let codec = ConversationCodec()
+    private var cacheWriteVersion = 0
     private var generation = UUID()
     private var refreshVersion = 0
     private var liveRefreshTask: Task<Void, Never>?
@@ -316,10 +330,17 @@ final class ConversationModel {
         let defaultScope = reminderHistory ? "" : "client"
         let savedScope = defaults.string(forKey: "\(key).scope") ?? defaultScope
         channel = ["", "client", "telegram", "email"].contains(savedScope) ? savedScope : defaultScope
+        let savedReads = defaults.data(forKey: "\(key).readVersions")
+        if let savedReads {
+            readVersions = try JSONDecoder().decode([String: String].self, from: savedReads)
+        }
         guard let data = defaults.data(forKey: key) else { return }
         let saved = try JSONDecoder().decode(ConversationCache.self, from: data)
         cache = saved.transcripts
-        readVersions = saved.readVersions ?? [:]
+        if savedReads == nil {
+            readVersions = saved.readVersions ?? [:]
+            try persistReadVersions()
+        }
         conversations = (saved.scope ?? "") == channel ? saved.conversations.filter { $0.scheduled == reminderHistory } : []
         savedConversations = Dictionary(uniqueKeysWithValues: conversations.map { ($0.threadID, $0) })
         totalConversations = conversations.count
@@ -337,45 +358,71 @@ final class ConversationModel {
         readVersions = [:]
     }
 
-    private func persistCache() throws {
+    private func persistCache() async throws {
         guard let cacheKey else { return }
-        defaults.set(try JSONEncoder().encode(ConversationCache(
-            conversations: conversations, transcripts: cache, readVersions: readVersions, scope: channel
-        )), forKey: cacheKey)
+        cacheWriteVersion += 1
+        let version = cacheWriteVersion
+        let current = generation
+        let snapshot = ConversationCache(conversations: conversations, transcripts: cache, scope: channel)
+        let data = try await codec.encode(snapshot)
+        guard current == generation, version == cacheWriteVersion else { return }
+        defaults.set(data, forKey: cacheKey)
+    }
+
+    /// Read controls write only their small metadata map, not every retained transcript.
+    private func persistReadVersions() throws {
+        guard let cacheKey else { return }
+        defaults.set(try JSONEncoder().encode(readVersions), forKey: "\(cacheKey).readVersions")
     }
 
     var selected: Conversation? { conversations.first { $0.threadID == selectedThread } }
 
     /// Local read state is separate from the server's delivery acknowledgments.
     func isUnread(_ conversation: Conversation) -> Bool {
-        readVersions[conversation.threadID] != Self.readVersion(conversation)
+        guard let read = readVersions[conversation.threadID] else { return true }
+        return !Self.covers(read, version: Self.readVersion(conversation))
     }
 
     /// Called only once the selected transcript is rendered, never when a list row is clicked.
     func markRendered() {
         guard transcriptLoaded, let selected, let version = renderedVersion else { return }
         guard manuallyUnreadSelection != selected.threadID else { return }
-        guard readVersions[selected.threadID] != version else { return }
+        if let read = readVersions[selected.threadID], Self.covers(read, version: version) { return }
         readVersions[selected.threadID] = version
-        do { try persistCache() }
+        do { try persistReadVersions() }
         catch { self.error = error.presentableMessage }
     }
 
     /// Explicit local read controls never acknowledge a delivery or change server conversation data.
     func setRead(_ read: Bool, conversation: Conversation) {
         if read {
-            readVersions[conversation.threadID] = Self.readVersion(conversation)
+            let version = Self.readVersion(conversation)
+            if !(readVersions[conversation.threadID].map({ Self.covers($0, version: version) }) ?? false) {
+                readVersions[conversation.threadID] = version
+            }
             if manuallyUnreadSelection == conversation.threadID { manuallyUnreadSelection = nil }
         } else {
             readVersions.removeValue(forKey: conversation.threadID)
             if selectedThread == conversation.threadID { manuallyUnreadSelection = conversation.threadID }
         }
-        do { try persistCache() }
+        do { try persistReadVersions() }
         catch { self.error = error.presentableMessage }
     }
 
     private static func readVersion(_ conversation: Conversation) -> String {
         "\(conversation.lastActivityAt)|\(conversation.messageCount)|\(conversation.latestTaskID)"
+    }
+
+    /// Equivalent timestamp formats and older snapshots cannot move a read watermark backwards.
+    private static func covers(_ read: String, version: String) -> Bool {
+        if read == version { return true }
+        let lhs = read.split(separator: "|")
+        let rhs = version.split(separator: "|")
+        guard lhs.count == 3, rhs.count == 3,
+              let readDate = ServerDate.parse(String(lhs[0])), let date = ServerDate.parse(String(rhs[0])),
+              let readCount = Int(lhs[1]), let count = Int(rhs[1]),
+              let readTask = Int(lhs[2]), let task = Int(rhs[2]) else { return false }
+        return readDate >= date && readCount >= count && readTask >= task
     }
 
     private static func newestFirst(_ lhs: Conversation, _ rhs: Conversation) -> Bool {
@@ -483,22 +530,26 @@ final class ConversationModel {
         } catch let error as ClientError where error.httpStatus == 404 || error.httpStatus == 422 {
             throw ClientError.serverOutdated(String(localized: "separate chats and reminder history"))
         }
+        let decoded = try await codec.decode(result, as: Page<Conversation>.self)
         guard current == generation, filter == (search, channel) else { return }
-        let decoded = try Wire.decoder().decode(Page<Conversation>.self, from: JSONEncoder().encode(result))
         for conversation in decoded.rows { savedConversations[conversation.threadID] = conversation }
         let incoming = Set(decoded.rows.map(\.threadID))
+        var updated: [Conversation]
         if older {
-            conversations = conversations.filter { !incoming.contains($0.threadID) } + decoded.rows
+            updated = conversations.filter { !incoming.contains($0.threadID) } + decoded.rows
             listPage = page
         } else if listPage > 0 {
-            conversations = decoded.rows + conversations.filter { !incoming.contains($0.threadID) }
+            updated = decoded.rows + conversations.filter { !incoming.contains($0.threadID) }
         } else {
-            conversations = decoded.rows
+            updated = decoded.rows
         }
-        conversations.sort(by: Self.newestFirst)
+        updated.sort(by: Self.newestFirst)
         totalConversations = decoded.total
         listFetchedAt = .now
-        try persistCache()
+        if conversations != updated {
+            conversations = updated
+            try await persistCache()
+        }
     }
 
     /// Search and channel changes start a fresh page set instead of filtering a partial local list.
@@ -538,6 +589,7 @@ final class ConversationModel {
         guard let selected else { return }
         let thread = selected.threadID
         if let maxAge, !moreMessages, let cached = cache[thread],
+           cached.conversationVersion == Self.readVersion(selected),
            Duration.seconds(Date().timeIntervalSince(cached.fetchedAt)) < maxAge {
             return
         }
@@ -554,14 +606,17 @@ final class ConversationModel {
             guard selectedThread == thread, version == refreshVersion else { return }
             guard let messageData = snapshot["messages"], let activityData = snapshot["activity"],
                   let taskData = snapshot["task"] else { throw ClientError.malformedResponse }
-            let page = try Wire.decoder().decode(Page<ChatMessage>.self, from: JSONEncoder().encode(messageData))
-            let activity = try JSONDecoder().decode(ToolActivity.self, from: JSONEncoder().encode(activityData))
-            let status = try Wire.decoder().decode(ChatTask.self, from: JSONEncoder().encode(taskData))
-            messages = page.rows; totalMessages = page.total
-            toolCalls = activity.rows; activityTruncated = activity.truncated
+            let page = try await codec.decode(messageData, as: Page<ChatMessage>.self)
+            let activity = try await codec.decode(activityData, as: ToolActivity.self, wire: false)
+            let status = try await codec.decode(taskData, as: ChatTask.self)
+            guard selectedThread == thread, version == refreshVersion else { return }
+            if messages != page.rows { messages = page.rows }
+            totalMessages = page.total
+            if toolCalls != activity.rows { toolCalls = activity.rows }
+            activityTruncated = activity.truncated
             transcriptLoaded = true; loadingTranscript = false
             renderedVersion = Self.readVersion(selected)
-            if let index = conversations.firstIndex(where: { $0.threadID == thread }) {
+            if let index = conversations.firstIndex(where: { $0.threadID == thread && $0.latestTaskID == status.id }) {
                 conversations[index].latestTaskStatus = status.status
             }
             if selected.active && !status.active {
@@ -574,7 +629,9 @@ final class ConversationModel {
                messages.contains(where: { $0.incoming && $0.channel == "client" && $0.wireID == pendingRequestID }) {
                 pendingMessage = nil
             }
-            try remember(thread)
+            guard selectedThread == thread, version == refreshVersion else { return }
+            try await remember(thread)
+            guard selectedThread == thread, version == refreshVersion else { return }
             error = nil
             return
         }
@@ -591,7 +648,7 @@ final class ConversationModel {
             transcript = try await messagePage(model, task: task, page: page).rows + transcript
         }
         guard selectedThread == thread, version == refreshVersion else { return }
-        messages = transcript
+        if messages != transcript { messages = transcript }
         totalMessages = latest.total
         transcriptLoaded = true
         renderedVersion = Self.readVersion(selected)
@@ -601,26 +658,32 @@ final class ConversationModel {
             self.pendingMessage = nil
         }
         if cache[thread]?.messages != messages || cache[thread]?.totalMessages != totalMessages {
-            try remember(thread)
+            try await remember(thread)
         }
         // Message rendering must not wait for the slower activity or task-status endpoints.
         let since = transcript.count < latest.total ? transcript.first?.createdAt : nil
         let activity = try await self.activity(model, task: task, since: since)
         guard selectedThread == thread, version == refreshVersion else { return }
-        toolCalls = activity.rows
+        if toolCalls != activity.rows { toolCalls = activity.rows }
         activityTruncated = activity.truncated
         if selected.active { try await refreshStatus(model) }
         guard selectedThread == thread, version == refreshVersion else { return }
-        try remember(thread)
+        try await remember(thread)
+        guard selectedThread == thread, version == refreshVersion else { return }
         error = nil
     }
 
-    private func remember(_ thread: String) throws {
+    private func remember(_ thread: String) async throws {
+        let previous = cache[thread]
         cache[thread] = CachedTranscript(messages: messages, totalMessages: totalMessages, messagePages: messagePages,
                                          toolCalls: toolCalls, activityTruncated: activityTruncated,
                                          fetchedAt: Date(), conversationVersion: renderedVersion)
         if let selected { savedConversations[thread] = selected }
-        try persistCache()
+        if previous?.messages != messages || previous?.toolCalls != toolCalls ||
+            previous?.totalMessages != totalMessages || previous?.messagePages != messagePages ||
+            previous?.activityTruncated != activityTruncated || previous?.conversationVersion != renderedVersion {
+            try await persistCache()
+        }
     }
 
     /// Tool calls across the whole conversation; an older server without the endpoint shows none.
@@ -631,7 +694,7 @@ final class ConversationModel {
         let query = components.percentEncodedQuery.map { "?\($0)" } ?? ""
         do {
             let result = try await model.read("tasks/\(task)/activity\(query)")
-            return try JSONDecoder().decode(ToolActivity.self, from: JSONEncoder().encode(result))
+            return try await codec.decode(result, as: ToolActivity.self, wire: false)
         } catch let error as ClientError where error.httpStatus == 404 {
             activityUnsupported = true
             return ToolActivity(rows: [], truncated: false)
@@ -650,13 +713,13 @@ final class ConversationModel {
 
     private func messagePage(_ model: ClientModel, task: Int, page: Int) async throws -> Page<ChatMessage> {
         let result = try await model.read("tasks/\(task)/messages?page=\(page)")
-        return try Wire.decoder().decode(Page<ChatMessage>.self, from: JSONEncoder().encode(result))
+        return try await codec.decode(result, as: Page<ChatMessage>.self)
     }
 
     func chatTask(_ model: ClientModel, id: Int) async throws -> ChatTask {
         let record = try await model.read("records/tasks/\(id)")
         guard let row = record["rows"]?.array?.first else { throw ClientError.malformedResponse }
-        return try Wire.decoder().decode(ChatTask.self, from: JSONEncoder().encode(row))
+        return try await codec.decode(row, as: ChatTask.self)
     }
 
     /// Opens an update's task even when its conversation is outside the current list page.

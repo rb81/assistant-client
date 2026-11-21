@@ -251,7 +251,7 @@ struct DataManagementView: View {
                                 "operation": .string("database.reset"), "confirmation": .string(confirmation),
                                 "clean_install": .bool(false), "keep_mailbox_position": .bool(true)
                             ]))
-                            model.chats.clearSavedCache()
+                            await model.clearConversationCache()
                             showingReset = false
                             await model.disconnect()
                             model.status = String(localized: "Data reset completed. Reconnect to continue.")
