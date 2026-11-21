@@ -43,6 +43,12 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
+/// Presentation derived once per retained message instead of during every view update.
+struct ChatMessagePresentation {
+    let timestamp: String
+    let json: JSONValue?
+}
+
 /// A server-authorized reference to a retained attachment, not a local or remote arbitrary URL.
 struct ChatAttachment: Codable, Sendable, Equatable {
     let filename: String?
@@ -193,10 +199,14 @@ enum TranscriptItem: Identifiable, Equatable {
     static func timeline(messages: [ChatMessage], calls: [ToolCall]) -> [TranscriptItem] {
         var items: [TranscriptItem] = []
         var remaining = calls[...]
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let standard = ISO8601DateFormatter()
         for message in messages {
-            let messageDate = ServerDate.parse(message.createdAt)
+            let messageDate = ServerDate.parse(message.createdAt, precise: precise, standard: standard)
             var run: [ToolCall] = []
-            while let call = remaining.first, let messageDate, let callDate = ServerDate.parse(call.createdAt),
+            while let call = remaining.first, let messageDate,
+                  let callDate = ServerDate.parse(call.createdAt, precise: precise, standard: standard),
                   callDate < messageDate {
                 run.append(call)
                 remaining = remaining.dropFirst()
@@ -213,6 +223,13 @@ enum TranscriptItem: Identifiable, Equatable {
 enum ServerDate {
     /// Parses ISO 8601 with or without fractional seconds; fractions beyond milliseconds are dropped.
     static func parse(_ text: String) -> Date? {
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return parse(text, precise: precise, standard: ISO8601DateFormatter())
+    }
+
+    /// A timeline reuses formatters across its messages and calls.
+    static func parse(_ text: String, precise: ISO8601DateFormatter, standard: ISO8601DateFormatter) -> Date? {
         var value = text.replacingOccurrences(of: " ", with: "T")
         if let dot = value.firstIndex(of: ".") {
             let digits = value[value.index(after: dot)...].prefix(while: \.isNumber)
@@ -221,9 +238,7 @@ enum ServerDate {
                 value.removeSubrange(start..<value.index(start, offsetBy: digits.count - 3))
             }
         }
-        let precise = ISO8601DateFormatter()
-        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return precise.date(from: value) ?? ISO8601DateFormatter().date(from: value)
+        return precise.date(from: value) ?? standard.date(from: value)
     }
 }
 
@@ -276,8 +291,17 @@ final class ConversationModel {
             if let cacheKey { defaults.set(channel, forKey: "\(cacheKey).scope") }
         }
     }
-    var messages: [ChatMessage] = []
-    var toolCalls: [ToolCall] = []
+    var messages: [ChatMessage] = [] {
+        didSet {
+            cachedMessageTimeline = nil
+            cachedToolTimeline = nil
+            let ids = Set(messages.map(\.id))
+            messagePresentationCache = messagePresentationCache.filter { ids.contains($0.key) }
+        }
+    }
+    var toolCalls: [ToolCall] = [] {
+        didSet { cachedToolTimeline = nil }
+    }
     var activityTruncated = false
     var error: String?
     var sending = false
@@ -311,6 +335,9 @@ final class ConversationModel {
     private var deliveries: [String: [Int]] = [:]
     /// Older servers have no activity endpoint; stop asking once that is known.
     private var activityUnsupported = false
+    @ObservationIgnored private var cachedMessageTimeline: [TranscriptItem]?
+    @ObservationIgnored private var cachedToolTimeline: [TranscriptItem]?
+    @ObservationIgnored private var messagePresentationCache: [String: (ChatMessage, String, ChatMessagePresentation)] = [:]
 
     /// Injectable preferences keep tests and UI fixtures separate from the user's cached conversations.
     private let reminderHistory: Bool
@@ -432,13 +459,51 @@ final class ConversationModel {
     }
 
     /// Messages and tool calls in the order they happened.
-    var timeline: [TranscriptItem] {
+    var timeline: [TranscriptItem] { timeline(showToolCalls: true) }
+
+    /// Hidden tool calls do not require timestamp parsing or invalidate the visible timeline.
+    func timeline(showToolCalls: Bool) -> [TranscriptItem] {
+        let currentMessages = messages
+        let calls = showToolCalls ? toolCalls : []
         let confirmed = pendingRequestID.map { request in
-            messages.contains { $0.incoming && $0.channel == "client" && $0.wireID == request }
+            currentMessages.contains { $0.incoming && $0.channel == "client" && $0.wireID == request }
         } ?? false
-        return TranscriptItem.timeline(messages: messages, calls: toolCalls) +
+        let base: [TranscriptItem]
+        if showToolCalls {
+            if let cachedToolTimeline { base = cachedToolTimeline }
+            else {
+                base = TranscriptItem.timeline(messages: currentMessages, calls: calls)
+                cachedToolTimeline = base
+            }
+        } else if let cachedMessageTimeline {
+            base = cachedMessageTimeline
+        } else {
+            base = currentMessages.map(TranscriptItem.message)
+            cachedMessageTimeline = base
+        }
+        return base +
             (pendingThread == selectedThread && !confirmed && !pendingUnconfirmed ?
              pendingMessage.map { [.message($0)] } ?? [] : [])
+    }
+
+    /// Cache parsing by message and system locale; ordinary prose never enters the JSON decoder.
+    func presentation(for message: ChatMessage) -> ChatMessagePresentation {
+        let locale = Locale.current.identifier + "|" + TimeZone.current.identifier
+        if let (saved, savedLocale, value) = messagePresentationCache[message.id],
+           saved == message, savedLocale == locale {
+            return value
+        }
+        let timestamp: String
+        if let date = ServerDate.parse(message.createdAt) {
+            timestamp = date.formatted(date: .abbreviated, time: .shortened)
+        } else {
+            timestamp = String(message.createdAt.prefix(16)).replacingOccurrences(of: "T", with: " ")
+        }
+        let first = message.body.first { !$0.isWhitespace }
+        let json = !message.scheduled && (first == "{" || first == "[") ? try? JSONValue.parse(message.body) : nil
+        let value = ChatMessagePresentation(timestamp: timestamp, json: json)
+        messagePresentationCache[message.id] = (message, locale, value)
+        return value
     }
 
     /// Resets all remote content when connection identity changes.
@@ -568,8 +633,8 @@ final class ConversationModel {
             guard let self else { return }
             defer { liveRefreshTask = nil }
             do {
-                try await Task.sleep(for: .milliseconds(150))
                 repeat {
+                    try await Task.sleep(for: .milliseconds(300))
                     liveRefreshPending = false
                     try await loadConversations(model)
                     guard generation == current, !Task.isCancelled else { return }
@@ -615,9 +680,12 @@ final class ConversationModel {
             if toolCalls != activity.rows { toolCalls = activity.rows }
             activityTruncated = activity.truncated
             transcriptLoaded = true; loadingTranscript = false
-            renderedVersion = Self.readVersion(selected)
+            let readVersion = Self.readVersion(selected)
+            if renderedVersion != readVersion { renderedVersion = readVersion }
             if let index = conversations.firstIndex(where: { $0.threadID == thread && $0.latestTaskID == status.id }) {
-                conversations[index].latestTaskStatus = status.status
+                if conversations[index].latestTaskStatus != status.status {
+                    conversations[index].latestTaskStatus = status.status
+                }
             }
             if selected.active && !status.active {
                 await model.addUpdate(id: "task:\(status.id):\(status.status)",
@@ -708,7 +776,9 @@ final class ConversationModel {
         guard let index = conversations.firstIndex(where: {
             $0.threadID == selected.threadID && $0.latestTaskID == task.id
         }) else { return }
-        conversations[index].latestTaskStatus = task.status
+        if conversations[index].latestTaskStatus != task.status {
+            conversations[index].latestTaskStatus = task.status
+        }
     }
 
     private func messagePage(_ model: ClientModel, task: Int, page: Int) async throws -> Page<ChatMessage> {

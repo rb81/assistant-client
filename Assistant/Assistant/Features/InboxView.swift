@@ -8,7 +8,8 @@ struct InboxView: View {
     var askAboutRun: ((Conversation) -> Void)? = nil
     @State private var showingSchedule = false
     @State private var deletionPreview: JSONValue?
-    @State private var scrollState = TranscriptScrollState()
+    @State private var scrollTracker = TranscriptScrollTracker()
+    @State private var followsLatest = true
     @State private var loadingEarlier = false
     @State private var confirmingRoute = false
     @State private var searchReady = false
@@ -256,26 +257,33 @@ struct InboxView: View {
                 .id(chat.selectedThread ?? "new")
                 .overlay { transcriptPlaceholder }
                 .overlay(alignment: .bottomTrailing) {
-                    if !scrollState.followsLatest {
+                    if !followsLatest {
                         Button("Latest", systemImage: "arrow.down") {
-                            scrollState.followsLatest = true
+                            scrollTracker.state.followsLatest = true
+                            followsLatest = true
                             reader.scrollTo("transcript-end", anchor: .bottom)
                         }
                         .buttonStyle(.bordered).padding(16)
                     }
                 }
                 .onPreferenceChange(TranscriptFrame.self) { frame in
-                    if scrollState.update(frame: frame, viewportHeight: viewport.size.height), !loadingEarlier {
+                    let shouldFollow = scrollTracker.state.update(frame: frame, viewportHeight: viewport.size.height)
+                    if followsLatest != scrollTracker.state.followsLatest {
+                        followsLatest = scrollTracker.state.followsLatest
+                    }
+                    if shouldFollow && !loadingEarlier {
                         reader.scrollTo("transcript-end", anchor: .bottom)
                     }
                 }
                 .onChange(of: transcriptTail) { old, new in
                     if old.thread != new.thread {
-                        scrollState = TranscriptScrollState()
+                        scrollTracker.state = TranscriptScrollState()
+                        followsLatest = true
                     } else if new.pending != nil && old.pending != new.pending {
-                        scrollState.followsLatest = true
+                        scrollTracker.state.followsLatest = true
+                        followsLatest = true
                     }
-                    if scrollState.followsLatest && !loadingEarlier {
+                    if followsLatest && !loadingEarlier {
                         reader.scrollTo("transcript-end", anchor: .bottom)
                     }
                 }
@@ -293,7 +301,7 @@ struct InboxView: View {
         if chat.loadingTranscript {
             ProgressView("Loading conversation…")
                 .accessibilityIdentifier("transcript-loading")
-        } else if chat.selectedThread != nil && chat.timeline.isEmpty {
+        } else if chat.selectedThread != nil && chat.timeline(showToolCalls: showToolCalls).isEmpty {
             VStack(spacing: 12) {
                 Text(chat.error == nil ? "No messages in this conversation yet." : "Conversation could not be loaded.")
                     .foregroundStyle(Theme.secondary)
@@ -310,7 +318,7 @@ struct InboxView: View {
     }
 
     private var transcriptRows: some View {
-        VStack(alignment: .leading, spacing: 24) {
+        LazyVStack(alignment: .leading, spacing: 24) {
             if isReminders && chat.selectedThread == nil {
                 ContentUnavailableView("Select a reminder", systemImage: "clock",
                                        description: Text("See what Assistant did and where it sent the result."))
@@ -336,10 +344,7 @@ struct InboxView: View {
                 Text("Earlier tool calls in this conversation are not shown.")
                     .font(.caption).foregroundStyle(Theme.secondary)
             }
-            ForEach(chat.timeline.filter {
-                if case .tools = $0 { return showToolCalls }
-                return true
-            }) { item in
+            ForEach(chat.timeline(showToolCalls: showToolCalls)) { item in
                 switch item {
                 case .message(let message): messageView(message)
                 case .tools(let calls): if showToolCalls { ToolRunView(calls: calls) }
@@ -349,13 +354,11 @@ struct InboxView: View {
                 Label("Deleted task. Conversation and shared data are preserved. This chat is read-only.",
                       systemImage: "lock").font(.callout).foregroundStyle(Theme.secondary)
             }
+            Color.clear.frame(height: 1).id("transcript-end")
         }
         .frame(maxWidth: Theme.contentWidth, alignment: .leading)
         .padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 16)
         .frame(maxWidth: .infinity)
-        .background(alignment: .bottom) {
-            Color.clear.frame(height: 1).id("transcript-end")
-        }
         .background {
             GeometryReader { content in
                 Color.clear.preference(key: TranscriptFrame.self,
@@ -367,6 +370,7 @@ struct InboxView: View {
     /// One message: who sent it, when, and its rendered body.
     private func messageView(_ message: ChatMessage) -> some View {
         let external = message.external == true && !message.incoming
+        let presentation = chat.presentation(for: message)
         return VStack(alignment: .leading, spacing: 9) {
             HStack {
                 Label(message.scheduled ? String(localized: "Scheduled run") :
@@ -381,7 +385,7 @@ struct InboxView: View {
                     Text(Conversation.channelTitle(message.channel)).font(.caption).foregroundStyle(Theme.secondary)
                 }
                 Spacer()
-                Text(Self.timestamp(message.createdAt)).font(.caption2).foregroundStyle(Theme.secondary)
+                Text(presentation.timestamp).font(.caption2).foregroundStyle(Theme.secondary)
                 CopyTextButton(text: message.body, compact: true)
                     .accessibilityIdentifier("copy-message-\(message.id)")
             }
@@ -398,8 +402,7 @@ struct InboxView: View {
                     else { expandedInstructions.insert(message.id) }
                 }.buttonStyle(.plain).foregroundStyle(Theme.secondary)
                 if expanded { MarkdownContent(text: message.body).padding(.top, 6) }
-            } else if let value = try? JSONValue.parse(message.body),
-               message.body.trimmingCharacters(in: .whitespacesAndNewlines).first.map({ $0 == "{" || $0 == "[" }) == true {
+            } else if let value = presentation.json {
                 ChatJSON(value: value)
             } else {
                 MarkdownContent(text: message.body)
@@ -414,14 +417,6 @@ struct InboxView: View {
                     in: RoundedRectangle(cornerRadius: Theme.radius))
         .overlay(RoundedRectangle(cornerRadius: Theme.radius)
             .stroke(external ? Theme.highlight.opacity(0.5) : Theme.outline).allowsHitTesting(false))
-    }
-
-    /// Local date and time for a server timestamp, falling back to the raw value.
-    private static func timestamp(_ value: String) -> String {
-        guard let date = ServerDate.parse(value) else {
-            return String(value.prefix(16)).replacingOccurrences(of: "T", with: " ")
-        }
-        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     /// Blockers and preservation promises come from the server, not a local optimistic delete.

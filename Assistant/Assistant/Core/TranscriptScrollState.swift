@@ -20,3 +20,8 @@ struct TranscriptScrollState {
         return heightChanged && followsLatest
     }
 }
+
+/// Keeps high-frequency geometry samples out of SwiftUI's observable view state.
+final class TranscriptScrollTracker {
+    var state = TranscriptScrollState()
+}

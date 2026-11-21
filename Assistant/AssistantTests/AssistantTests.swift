@@ -308,6 +308,42 @@ final class AssistantTests: XCTestCase {
         ])
     }
 
+    /// Timeline caches must reflect changed messages and tools independently of their visibility.
+    @MainActor
+    func testVisibleTimelineUpdatesAfterMessagesAndToolsChange() throws {
+        let chat = ConversationModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)))
+        let first = ChatMessage(wireID: 1, kind: "request", channel: "client", body: "First",
+                                createdAt: "2026-01-01T10:00:00Z")
+        let second = ChatMessage(wireID: 2, kind: "reply", channel: "client", body: "Second",
+                                 createdAt: "2026-01-01T10:02:00Z")
+        let call = try JSONDecoder().decode(ToolCall.self, from: Data("""
+        {"id":"1:1","task_id":1,"created_at":"2026-01-01T10:01:00Z","tool_name":"search","status":"succeeded"}
+        """.utf8))
+        chat.messages = [first, second]
+        XCTAssertEqual(chat.timeline(showToolCalls: false).map(\.id), [first.id, second.id])
+        XCTAssertEqual(chat.timeline(showToolCalls: true).map(\.id), [first.id, second.id])
+        chat.toolCalls = [call]
+        XCTAssertEqual(chat.timeline(showToolCalls: true).map(\.id), [first.id, "tools:1:1", second.id])
+        XCTAssertEqual(chat.timeline(showToolCalls: false).map(\.id), [first.id, second.id])
+        chat.messages = [second]
+        XCTAssertEqual(chat.timeline(showToolCalls: true).map(\.id), ["tools:1:1", second.id])
+        XCTAssertEqual(chat.timeline(showToolCalls: false).map(\.id), [second.id])
+    }
+
+    /// Cached presentation must update when a message with the same identity changes.
+    @MainActor
+    func testMessagePresentationHandlesJSONAndChangedContent() throws {
+        let chat = ConversationModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)))
+        let json = ChatMessage(wireID: 1, kind: "reply", channel: "client", body: " \n{\"ok\":true}",
+                               createdAt: "invalid date")
+        XCTAssertEqual(chat.presentation(for: json).json, .object(["ok": .bool(true)]))
+        XCTAssertEqual(chat.presentation(for: json).timestamp, "invalid date")
+        let prose = ChatMessage(wireID: 1, kind: "reply", channel: "client", body: "{not JSON",
+                                createdAt: "different date")
+        XCTAssertNil(chat.presentation(for: prose).json)
+        XCTAssertEqual(chat.presentation(for: prose).timestamp, "different date")
+    }
+
     /// Conversation rows title themselves from the opening request and reflect their latest execution.
     func testConversationTitleAndState() throws {
         let rows = try Wire.decoder().decode([Conversation].self, from: Data("""
