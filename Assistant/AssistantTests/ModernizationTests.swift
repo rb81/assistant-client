@@ -178,6 +178,23 @@ final class ModernizationTests: XCTestCase {
         }
     }
 
+    /// Textual's copy proxy keeps fenced source intact and does not include its toolbar.
+    @MainActor
+    func testMarkdownCodeCopyPreservesSource() async throws {
+        for source in ["let ready = true", "  ┌────┐\n  │ A  │\n  └────┘"] {
+            let host = NSHostingView(rootView: MarkdownContent(text: "```\n\(source)\n```"))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+                                  styleMask: [.titled], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            try XCTUnwrap(descendant(NativeCopyControl.CopyButton.self, in: host)).performClick(nil)
+            XCTAssertEqual(NSPasteboard.general.string(forType: .string), source)
+        }
+    }
+
     @MainActor
     func testSettingsMenuPrefetchIsAtomicCoalescedPersistentAndContainsNoSavedValues() async throws {
         let api = ChatAPI()
@@ -526,10 +543,263 @@ final class ModernizationTests: XCTestCase {
         }
     }
 
+    /// Box-drawing and arrow glyphs must occupy the same cells as text and spaces.
+    func testDiagramFontKeepsBoxDrawingAligned() throws {
+        let font = try XCTUnwrap(NSFont(name: "Menlo", size: 13))
+        let cellWidth = NSAttributedString(string: "M", attributes: [.font: font]).size().width
+        for glyph in " ┌─┐│└┘├┤┬┴┼→▼▶" {
+            XCTAssertEqual(NSAttributedString(string: String(glyph), attributes: [.font: font]).size().width,
+                           cellWidth, accuracy: 0.01, "Diagram glyph \(glyph) must retain its cell width")
+        }
+    }
+
+    /// Tables and diagrams remain bounded in narrow transcripts and both appearances.
+    @MainActor
+    func testMarkdownTableAndDiagramLayoutInBothAppearances() async throws {
+        let source = """
+        ## Outcome metrics
+
+        | Metric | What it measures | How to compute |
+        |:---|:---:|---:|
+        | **Task completion** | Did the agent achieve the task's success criteria? | Binary or partial-credit per task, averaged over the suite |
+        | Pass@k | Capability ceiling | At least 1 of k independent runs succeeds |
+
+        ---
+
+        ```
+        ┌──────────────────────────────────────────────────────────────┐
+        │                         TEST RUNNER                          │
+        │ ┌─────────────┐    ┌───────────────┐    ┌───────────────────┐ │
+        │ │ Test suite  │───▶│ Environment   │───▶│ Injection         │ │
+        │ └─────────────┘    └───────────────┘    └───────────────────┘ │
+        └──────────────────────────────────────────────────────────────┘
+        ```
+        """
+        for appearance in [ColorScheme.light, .dark] {
+            let host = NSHostingView(rootView: MarkdownContent(text: source)
+                .padding(16).environment(\.colorScheme, appearance))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 500),
+                                  styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            for width in [800.0, 420.0] {
+                window.setContentSize(NSSize(width: width, height: 500))
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(150))
+                XCTAssertLessThan(host.fittingSize.height, 500, "Horizontal scrollers must not add empty height")
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let attachment = XCTAttachment(data: try XCTUnwrap(bitmap.representation(using: .png, properties: [:])),
+                                               uniformTypeIdentifier: "public.png")
+                attachment.name = "Markdown table and diagram \(appearance) \(width)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
     @MainActor
     private func descendant<T: NSView>(_ type: T.Type, in view: NSView) -> T? {
         if let match = view as? T { return match }
         return view.subviews.lazy.compactMap { self.descendant(type, in: $0) }.first
+    }
+
+    /// The reported diagram retains its exact spaces and line breaks without narrow-window wrapping.
+    @MainActor
+    func testReportedDiagramPreservesSourceAndScrollsHorizontally() async throws {
+        let diagram = """
+        ┌─────────────────────────────────────────────────────┐
+        │                   TEST RUNNER                        │
+        │  (Python script, orchestrates the whole suite)       │
+        │                                                      │
+        │  ┌───────────┐    ┌──────────────┐   ┌───────────┐ │
+        │  │ Test Case  │───▶│ Environment  │──▶│ Injection │ │
+        │  │ Suite      │    │ Setup       │   │           │ │
+        │  │ (YAML/JSON)│    │ (fresh       │   │ Send test │ │
+        │  │            │    │  container) │   │ email via │ │
+        │  └───────────┘    └──────────────┘   │ SMTP/IMAP │ │
+        │                                       └─────┬─────┘ │
+        │                                             │       │
+        │                                             ▼       │
+        │              ┌──────────────────────────────────┐   │
+        │              │   rb81/assistant (Docker)         │   │
+        │              │   ┌─────────────────────────┐     │   │
+        │              │   │ LLM (OpenRouter)        │     │   │
+        │              │   │ Tools (email, cal,      │     │   │
+        │              │   │ files, web, scripts...) │     │   │
+        │              │   │ Memory, approval gates  │     │   │
+        │              │   └─────────────────────────┘     │   │
+        │              └──────────────┬───────────────────┘   │
+        │                             │                        │
+        │                             ▼                        │
+        │              ┌──────────────────────────────────┐   │
+        │              │   Response Capture               │   │
+        │              │   - Poll IMAP for reply email    │   │
+        │              │   - OR intercept via dashboard   │   │
+        │              │     API (no email needed)        │   │
+        │              │   - Capture OTLP traces          │   │
+        │              └──────────────┬───────────────────┘   │
+        │                             │                        │
+        │                             ▼                        │
+        │              ┌──────────────────────────────────┐   │
+        │              │   Grading Layer                   │   │
+        │              │   ┌────────────┐ ┌────────────┐  │   │
+        │              │   │Deterministic│ │ LLM Judge  │  │   │
+        │              │   │ Validators  │ │ (rubric-    │  │   │
+        │              │   │ (check side │ │  based,     │  │   │
+        │              │   │  effects,   │ │  calibrated)│  │   │
+        │              │   │  files, cal)│ │             │  │   │
+        │              │   └────────────┘ └────────────┘  │   │
+        │              └──────────────┬───────────────────┘   │
+        │                             │                        │
+        │                             ▼                        │
+        │              ┌──────────────────────────────────┐   │
+        │              │   Results Store                   │   │
+        │              │   - JSON per run: task, config,   │   │
+        │              │     outcome, metrics, trace       │   │
+        │              │   - Time-series for regression    │   │
+        │              │     tracking                      │   │
+        │              └──────────────────────────────────┘   │
+        └─────────────────────────────────────────────────────┘
+        """
+        let source = "```\n\(diagram)\n```"
+        let parsed = try ClientMarkdownParser().attributedString(for: source)
+        XCTAssertEqual(String(parsed.characters), diagram + "\n")
+        for appearance in [ColorScheme.light, .dark] {
+            let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 0) {
+                MarkdownContent(text: source)
+                Spacer(minLength: 0)
+            }.padding(16).environment(\.colorScheme, appearance))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 800, height: 1100),
+                                  styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            var wideHeight: CGFloat?
+            for width in [800.0, 420.0] {
+                window.setContentSize(NSSize(width: width, height: 1100))
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(250))
+                let scroll = try XCTUnwrap(descendant(NSScrollView.self, in: host))
+                let document = try XCTUnwrap(scroll.documentView)
+                if let wideHeight {
+                    XCTAssertEqual(document.bounds.height, wideHeight, accuracy: 2,
+                                   "Narrowing a diagram must not wrap lines or change its height")
+                    XCTAssertGreaterThan(document.bounds.width, scroll.contentView.bounds.width,
+                                         "The complete unwrapped diagram must remain horizontally scrollable")
+                } else {
+                    wideHeight = document.bounds.height
+                }
+
+                let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let attachment = XCTAttachment(data: try XCTUnwrap(bitmap.representation(using: .png, properties: [:])),
+                                               uniformTypeIdentifier: "public.png")
+                attachment.name = "Reported diagram \(appearance) \(width)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    /// Rasterized table borders include the bottom edge, with real trailing padding even at document end.
+    @MainActor
+    func testMarkdownTableHasBottomBorderAndPaddingInBothAppearances() async throws {
+        let source = """
+        | Metric | What it measures | How to compute |
+        |---|---|---|
+        | Task completion | Did the agent achieve the task's success criteria? | Binary or partial credit averaged over the suite |
+        | Pass@k | Capability ceiling for repeated independent attempts | At least one of k independent runs succeeds |
+        """
+        for appearance in [ColorScheme.light, .dark] {
+            var renderedSize = CGSize.zero
+            let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 0) {
+                MarkdownContent(text: source)
+                    .onGeometryChange(for: CGSize.self, of: \.size) { renderedSize = $0 }
+                Spacer(minLength: 0)
+            }.padding(16).background(appearance == .light ? Color.white : Color.black)
+                .environment(\.colorScheme, appearance))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 500),
+                                  styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(250))
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let scale = CGFloat(bitmap.pixelsHigh) / host.bounds.height
+            let topColor = try XCTUnwrap(
+                bitmap.colorAt(x: bitmap.pixelsWide / 2, y: Int(16 * scale))?.usingColorSpace(.sRGB)
+            )
+            let border = [topColor.redComponent, topColor.greenComponent, topColor.blueComponent]
+            var strokeRows: [Int] = []
+            for y in 0..<bitmap.pixelsHigh {
+                var matching = 0
+                for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    if zip([color.redComponent, color.greenComponent, color.blueComponent], border)
+                        .allSatisfy({ abs($0 - $1) < 0.025 }) {
+                        matching += 1
+                    }
+                }
+                if matching > bitmap.pixelsWide / 8 { strokeRows.append(y) }
+            }
+            let edges = strokeRows.enumerated().filter { index, y in
+                index == 0 || y > strokeRows[index - 1] + 1
+            }
+            XCTAssertEqual(edges.count, 4,
+                           "Header and two rows need four complete borders in \(appearance); rows \(strokeRows)")
+            let bottom = CGFloat(try XCTUnwrap(strokeRows.last)) * host.bounds.height / CGFloat(bitmap.pixelsHigh) - 16
+            XCTAssertGreaterThanOrEqual(renderedSize.height - bottom, 15,
+                                        "Final table padding in \(appearance): size \(renderedSize), bottom \(bottom), rows \(strokeRows)")
+            let attachment = XCTAttachment(data: try XCTUnwrap(bitmap.representation(using: .png, properties: [:])),
+                                           uniformTypeIdentifier: "public.png")
+            attachment.name = "Complete table borders \(appearance)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+    }
+
+    /// Thematic breaks must paint a visible rule, not merely survive parsing as an intent.
+    @MainActor
+    func testMarkdownHorizontalRuleRendersInBothAppearances() async throws {
+        for appearance in [ColorScheme.light, .dark] {
+            let host = NSHostingView(rootView: VStack(alignment: .leading, spacing: 0) {
+                MarkdownContent(text: "Before the rule.\n\n---\n\nAfter the rule.")
+                Spacer(minLength: 0)
+            }.padding(16).background(appearance == .light ? Color.white : Color.black)
+                .environment(\.colorScheme, appearance))
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 250),
+                                  styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = host
+            defer { window.close() }
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(250))
+            let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let background = try XCTUnwrap(bitmap.colorAt(x: 0, y: 0)?.usingColorSpace(.sRGB))
+            let backgroundComponents = [background.redComponent, background.greenComponent, background.blueComponent]
+            let hasRule = (0..<bitmap.pixelsHigh).contains { y in
+                var matching = 0
+                for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    if zip([color.redComponent, color.greenComponent, color.blueComponent], backgroundComponents)
+                        .contains(where: { abs($0 - $1) > 0.025 }) {
+                        matching += 1
+                    }
+                }
+                return matching > bitmap.pixelsWide * 3 / 16
+            }
+            XCTAssertTrue(hasRule, "A horizontal rule must span most of the Markdown viewport in \(appearance)")
+            let attachment = XCTAttachment(data: try XCTUnwrap(bitmap.representation(using: .png, properties: [:])),
+                                           uniformTypeIdentifier: "public.png")
+            attachment.name = "Markdown horizontal rule \(appearance)"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
     }
 
     @MainActor
@@ -637,10 +907,24 @@ final class ModernizationTests: XCTestCase {
         XCTAssertNil(restored.activationSummary)
     }
 
-    func testRenderedProseKeepsParagraphsAndListsInOneSelectableText() {
-        let text = "# Heading\nFirst line.\nSecond **line**.\n\n- First item\n- Second item\n\nFinal paragraph."
-        let rendered = String(MarkdownContent.prose(text).characters)
-        XCTAssertEqual(rendered, "Heading\nFirst line.\nSecond line.\n\n• First item\n• Second item\n\nFinal paragraph.")
+    /// Image URLs are removed before Textual can schedule any attachment loading.
+    @MainActor
+    func testMarkdownImagesRemainAltTextWithoutAttachmentURLs() throws {
+        let text = """
+        ![A remote image](https://example.invalid/image.png)
+
+        Inline ![a local image](file:///tmp/image.png) stays readable.
+
+        ```
+        ![literal code](https://example.invalid/code.png)
+        ```
+        """
+        let content = try ClientMarkdownParser().attributedString(for: text)
+        XCTAssertTrue(content.runs.allSatisfy { $0.imageURL == nil })
+        let rendered = String(content.characters)
+        XCTAssertTrue(rendered.contains("A remote image"))
+        XCTAssertTrue(rendered.contains("a local image"))
+        XCTAssertTrue(rendered.contains("![literal code](https://example.invalid/code.png)"))
     }
 
     @MainActor

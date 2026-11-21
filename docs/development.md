@@ -2,8 +2,9 @@
 
 ## Build
 
-Use Xcode with the macOS SDK on a Mac. The app targets macOS 14+ and has no
-third-party Swift dependencies.
+Use Xcode with the macOS SDK on a Mac. The app targets macOS 15+ and uses
+[Textual](https://github.com/gonzalezreal/textual) for native Markdown rendering.
+Xcode resolves its Swift package dependencies when opening the project.
 
 From the repository root:
 
@@ -17,6 +18,11 @@ Do not overwrite an existing local project or identifier file. Select the
 **Assistant** scheme and **My Mac**, then Build/Run. The initial template uses
 placeholder identifiers and ad-hoc signing; no Apple Developer Team ID is needed.
 The app performs no network activity until you connect.
+
+The public project template includes Textual and its resolved package versions.
+Keep its `project.xcworkspace/xcshareddata/swiftpm/Package.resolved` updated when
+intentionally upgrading dependencies. Runtime dependency notices are bundled in
+`Assistant/Resources/ThirdPartyNotices.txt`.
 
 The example project uses the format produced by its Xcode tooling. Use a
 compatible Xcode version rather than manually converting its project format.
@@ -179,9 +185,11 @@ configuration. No installation or provider credentials enter discovery. Public
 eligibility cannot guarantee account-specific access. The server independently
 enforces `provider.zdr=true` on OpenRouter requests when global ZDR is enabled.
 
-Remote Markdown uses native text views: HTML/scripts and remote images are not
-executed or loaded. Diagnostics remain selectable technical details, not the
-primary interface.
+Remote Markdown uses Textual's full-document parser and native structured-text
+layout, including tables and horizontal rules. Image URL attributes are removed
+before rendering, retaining alt text without loading remote or local images.
+HTML/scripts are never executed. Diagnostics remain selectable technical details,
+not the primary interface.
 
 Data uses a split file browser and native preview pane: safe Markdown text,
 inert UTF-8/UTF-16 text/code, ImageIO images, PDFKit, Quick Look for Office/fonts,
@@ -211,7 +219,8 @@ The palette comes from the icon's sampled sky blue (`#5D91B8`), amber glow
 Blue controls and cool neutral surfaces keep the warm brand accents restrained.
 Light/dark text and control pairs meet at least 4.5:1 contrast.
 The UI uses the macOS system font, with system monospace for
-diagnostic output. The asset catalog's `AppIcon.appiconset` contains the
+diagnostic output and Menlo for fenced code and aligned text diagrams.
+The asset catalog's `AppIcon.appiconset` contains the
 1024-pixel icon master and the smaller macOS sizes derived from it.
 
 ## Release checklist

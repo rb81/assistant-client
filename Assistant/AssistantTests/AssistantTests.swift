@@ -76,12 +76,18 @@ final class AssistantTests: XCTestCase {
     func testChannelScopeSurvivesDisconnectAndIsIsolated() async throws {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
         let model = ClientModel(defaults: defaults, health: health)
+        XCTAssertEqual(model.chats.channel, "client")
+        XCTAssertEqual(model.reminderRuns.channel, "")
         model.chats.channel = "telegram"
         await model.disconnect()
         let restored = ClientModel(defaults: defaults, health: health)
         XCTAssertEqual(restored.chats.channel, "telegram")
         try restored.chats.restoreCache(instance: "another-installation")
-        XCTAssertEqual(restored.chats.channel, "")
+        XCTAssertEqual(restored.chats.channel, "client")
+        restored.chats.channel = ""
+        let other = ConversationModel(defaults: defaults)
+        try other.restoreCache(instance: "another-installation")
+        XCTAssertEqual(other.channel, "", "An explicitly saved All channels choice must survive relaunch")
     }
 
     /// A snapshot replaces sequential transcript reads without transforming tool argument keys.
@@ -172,23 +178,39 @@ final class AssistantTests: XCTestCase {
     }
 
     /// Incomplete fences are common during generation; code must remain copyable without losing whitespace.
-    func testMarkdownFencesPreserveSource() {
-        XCTAssertEqual(MarkdownBlock.parse("Hello\n```swift\n  let x = 1\n```"), [
-            .prose("Hello"), .code(language: "swift", source: "  let x = 1")
-        ])
-        XCTAssertEqual(MarkdownBlock.parse("~~~python\nprint('hi')\n"), [
-            .code(language: "python", source: "print('hi')\n")
-        ])
-        XCTAssertEqual(MarkdownBlock.parse("````text\n```\n````"), [
-            .code(language: "text", source: "```")
-        ])
+    @MainActor
+    func testMarkdownFencesPreserveSource() throws {
+        for (source, expected) in [
+            ("Hello\n```swift\n  let x = 1\n```", "  let x = 1\n"),
+            ("~~~python\nprint('hi')\n", "print('hi')\n"),
+            ("````text\n```\n````", "```\n")
+        ] {
+            let content = try ClientMarkdownParser().attributedString(for: source)
+            let code = content.runs.filter { run in
+                run.presentationIntent?.components.contains {
+                    if case .codeBlock = $0.kind { return true }
+                    return false
+                } == true
+            }.map { String(content[$0.range].characters) }.joined()
+            XCTAssertEqual(code, expected)
+        }
     }
 
-    /// Blank lines separate paragraphs instead of rendering as empty rows; list items keep their own rows.
-    func testMarkdownParagraphsJoinSoftBreaksAndKeepListRows() {
-        XCTAssertEqual(MarkdownBlock.paragraphs("One\ntwo\n\n\nThree\n- a\n- b\n1. c"), [
-            ["One\ntwo"], ["Three", "- a", "- b", "1. c"]
-        ])
+    /// The app's parser integration retains full-document table and thematic-break structure.
+    @MainActor
+    func testMarkdownTablesAndHorizontalRulesRetainStructure() throws {
+        let source = "# Metrics\n\n| Metric | Value |\n|:---|---:|\n| **Pass** | 5 |\n\n---\n\nAfter"
+        let content = try ClientMarkdownParser().attributedString(for: source)
+        let intents = content.runs.flatMap { $0.presentationIntent?.components ?? [] }
+        XCTAssertTrue(intents.contains {
+            if case .table = $0.kind { return true }
+            return false
+        })
+        XCTAssertTrue(intents.contains {
+            if case .thematicBreak = $0.kind { return true }
+            return false
+        })
+        XCTAssertTrue(String(content.characters).contains("After"))
     }
 
     /// Tool calls appear between the messages they happened between, whatever the timestamp format.
@@ -283,11 +305,12 @@ final class AssistantTests: XCTestCase {
         state.update(frame: frame(0, 1000), viewportHeight: 400)
         state.update(frame: frame(-600, 1000), viewportHeight: 400)
         XCTAssertTrue(state.followsLatest)
-        state.update(frame: frame(-600, 1200), viewportHeight: 400)
+        XCTAssertTrue(state.update(frame: frame(-600, 1200), viewportHeight: 400),
+                      "Layout growth must request a scroll to the fully laid-out bottom")
         XCTAssertTrue(state.followsLatest, "Growing tool rows must not disable live following")
         state.update(frame: frame(-400, 1200), viewportHeight: 400)
         XCTAssertFalse(state.followsLatest)
-        state.update(frame: frame(-400, 1400), viewportHeight: 400)
+        XCTAssertFalse(state.update(frame: frame(-400, 1400), viewportHeight: 400))
         XCTAssertFalse(state.followsLatest, "New activity must not pull a reader out of history")
         state.update(frame: frame(-1000, 1400), viewportHeight: 400)
         XCTAssertTrue(state.followsLatest)
@@ -357,6 +380,7 @@ final class AssistantTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
         XCTAssertTrue(model.chats.sending)
+        XCTAssertTrue(model.chats.draft.isEmpty, "The composer must clear before the send response arrives")
         XCTAssertEqual(model.chats.pendingMessage?.body, "Immediate message")
         XCTAssertEqual(model.chats.timeline.count, 1)
         await api.resumeSubmission()

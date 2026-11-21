@@ -12,7 +12,7 @@ connection without keeping a terminal open.
 
 | Feature | What it does |
 |---|---|
-| **Chats** | Search conversations, mark them read or unread, select multiline prose, copy any complete message, open attachments, play audio, and inspect tool activity. Replies use your configured assistant's name. |
+| **Chats** | Search conversations, mark them read or unread, read Markdown tables and aligned text diagrams, select multiline prose, copy any complete message, open attachments, play audio, and inspect tool activity. Replies use your configured assistant's name. |
 | **Reminders** | Check schedules and past results, with read/unread state preserved across launches. Start a new chat to ask about a scheduled run. |
 | **Connections** | Open service health, activation, connection diagnostics, and request timings directly from the sidebar. |
 | **Data** | Use the full-width browser to preview images with zoom, text/code, Markdown, PDF, Office documents and fonts, or play supported audio/video. Download and manage workspace files. |
@@ -26,7 +26,7 @@ connection without keeping a terminal open.
 | Item | Details |
 |---|---|
 | **Download** | Look for a signed, notarized build on [GitHub Releases](https://github.com/rb81/assistant-client/releases), or [build from source](docs/development.md). |
-| **Requirements** | macOS 14 or later and a running [Assistant server](https://github.com/rb81/assistant#install). The app does not bundle the server. |
+| **Requirements** | macOS 15 or later and a running [Assistant server](https://github.com/rb81/assistant#install). The app does not bundle the server. |
 | **Remote connections** | No Docker, Python, Rust, or Node installation is needed on your Mac. |
 
 ## Connect
@@ -50,7 +50,7 @@ passwords. Quitting closes the tunnel, not the server or running tasks.
 | **File previews** | Reads are digest-verified. Quick Look and media previews use private temporary files, removed on dismissal or normal shutdown; an abnormal termination can leave files in the OS temporary directory. Text, image, Markdown and PDF previews stay in memory. HTML/SVG display as inert source, not web pages. |
 | **Settings menu cache** | Only installation-scoped navigation descriptors are persisted, never effective settings, credentials, instruction bodies or server source. Editing waits for a current server response. |
 | **Changes** | Configuration changes require review, destructive actions require confirmation, and uncertain writes are not replayed automatically. Server permissions still apply. |
-| **Channels** | The channel filter is remembered per installation. **Assistant client** does not mean this Mac. The app asks before replying here to an email or Telegram conversation. |
+| **Channels** | The channel filter defaults to **Assistant client** and remembers your choice per installation. **Assistant client** does not mean this Mac. The app asks before replying here to an email or Telegram conversation. |
 | **Notifications** | Alerts require permission, omit message bodies, and stop when you quit the app. |
 
 OpenRouter's public catalog indicates model and ZDR eligibility, not guaranteed

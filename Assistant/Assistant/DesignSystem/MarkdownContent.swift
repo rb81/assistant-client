@@ -1,107 +1,80 @@
 import AppKit
 import SwiftUI
+import Textual
 
-/// Bounded Markdown blocks retain fenced source exactly, including incomplete streaming fences.
-enum MarkdownBlock: Equatable {
-    case prose(String)
-    case code(language: String, source: String)
-
-    /// Splits fences without executing HTML or fetching remote images.
-    static func parse(_ text: String) -> [MarkdownBlock] {
-        var result: [MarkdownBlock] = []
-        var lines: [String] = []
-        var fence: String?
-        var language = ""
-        for line in text.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if let delimiter = fence {
-                if trimmed.hasPrefix(delimiter) && trimmed.dropFirst(delimiter.count).allSatisfy({ $0 == delimiter.first }) {
-                    result.append(.code(language: language, source: lines.joined(separator: "\n")))
-                    lines = []; fence = nil
-                } else { lines.append(line) }
-            } else if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") {
-                if !lines.isEmpty { result.append(.prose(lines.joined(separator: "\n"))); lines = [] }
-                let marker = trimmed.first ?? "`"
-                let count = trimmed.prefix(while: { $0 == marker }).count
-                fence = String(repeating: String(marker), count: count)
-                language = String(trimmed.dropFirst(count)).trimmingCharacters(in: .whitespaces)
-            } else { lines.append(line) }
-        }
-        if let _ = fence { result.append(.code(language: language, source: lines.joined(separator: "\n"))) }
-        else if !lines.isEmpty { result.append(.prose(lines.joined(separator: "\n"))) }
-        return result
-    }
-
-    /// Groups prose into paragraphs split at blank lines. Consecutive plain lines share one paragraph,
-    /// while headings, list items, and quotes keep their own rows.
-    static func paragraphs(_ text: String) -> [[String]] {
-        var result: [[String]] = []
-        var current: [String] = []
-        for line in text.components(separatedBy: "\n") {
-            if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                if !current.isEmpty { result.append(current); current = [] }
-            } else if let last = current.last, !isStructural(line), !isStructural(last) {
-                current[current.count - 1] = last + "\n" + line
-            } else {
-                current.append(line)
-            }
-        }
-        if !current.isEmpty { result.append(current) }
-        return result
-    }
-
-    /// Lines rendered with their own marker or font rather than flowing into a paragraph.
-    static func isStructural(_ line: String) -> Bool {
-        let heading = line.prefix(while: { $0 == "#" }).count
-        if (1...6).contains(heading) && line.dropFirst(heading).hasPrefix(" ") { return true }
-        if line.hasPrefix("- ") || line.hasPrefix("* ") || line.hasPrefix("> ") { return true }
-        let number = line.prefix(while: \.isNumber)
-        return !number.isEmpty && (line.dropFirst(number.count).hasPrefix(". ") || line.dropFirst(number.count).hasPrefix(") "))
+/// Textual owns Markdown parsing; image references remain readable alt text without loading URLs.
+struct ClientMarkdownParser: MarkupParser {
+    func attributedString(for input: String) throws -> AttributedString {
+        var content = try AttributedStringMarkdownParser.markdown().attributedString(for: input)
+        let imageRanges = content.runs.filter { $0.imageURL != nil }.map(\.range)
+        for range in imageRanges { content[range].imageURL = nil }
+        return content
     }
 }
 
-/// Rich native text and copyable code share the application palette in both appearances.
+/// Full Markdown documents use Textual's native block layout and coordinated text selection.
 struct MarkdownContent: View {
     let text: String
-    /// Space between paragraphs and code blocks, and between list rows inside one paragraph.
-    private static let paragraphSpacing: CGFloat = 12
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Self.paragraphSpacing) {
-            ForEach(Array(MarkdownBlock.parse(text).enumerated()), id: \.offset) { _, block in
-                switch block {
-                case .prose(let text):
-                    Text(Self.prose(text)).lineSpacing(3)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .code(let language, let source):
-                    CodeBlock(language: language, source: source)
-                }
-            }
-        }
-    }
-
-    /// Headings and lists remain native selectable text; inline Markdown handles links and emphasis.
-    static func prose(_ text: String) -> AttributedString {
-        var result = AttributedString()
-        for (index, line) in text.components(separatedBy: "\n").enumerated() {
-            if index > 0 { result.append(AttributedString("\n")) }
-            let heading = line.prefix(while: { $0 == "#" }).count
-            let isHeading = (1...6).contains(heading) && line.dropFirst(heading).hasPrefix(" ")
-            let bullet = line.hasPrefix("- ") || line.hasPrefix("* ")
-            let content = isHeading ? String(line.dropFirst(heading + 1)) :
-                bullet ? "• " + String(line.dropFirst(2)) : line
-            var attributed = (try? AttributedString(
-                markdown: content, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-            )) ?? AttributedString(content)
-            attributed.font = isHeading ? .system(size: heading == 1 ? 25 : heading == 2 ? 21 : 17, weight: .semibold) : .body
-            result.append(attributed)
-        }
-        return result
+        // Closest environment modifiers win, so block overrides precede the bundled preset.
+        StructuredText(text, parser: ClientMarkdownParser())
+            .textual.codeBlockStyle(ClientCodeBlockStyle(identity: text))
+            .textual.tableStyle(ClientTableStyle())
+            .textual.structuredTextStyle(.gitHub)
+            .textual.textSelection(.enabled)
+            .font(.body)
+            .foregroundStyle(Theme.ink)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
-/// Copy operates on original source rather than rendered Markdown or a selected text fragment.
+/// Library-rendered tables retain all borders and margins inside a selection-aware overflow region.
+private struct ClientTableStyle: StructuredText.TableStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        Overflow { state in
+            StructuredText.GitHubTableStyle().makeBody(configuration: configuration)
+                .frame(maxWidth: state.containerWidth.map { $0 * 1.5 }, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 16)
+        }
+        .textual.blockSpacing(.init(top: 0, bottom: 0))
+    }
+}
+
+/// Textual lays out unwrapped code; no added line spacing breaks box-drawing connections.
+private struct ClientCodeBlockStyle: StructuredText.CodeBlockStyle {
+    let identity: String
+
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(configuration.languageHint ?? String(localized: "Code"))
+                    .font(.caption.weight(.medium))
+                Spacer()
+                CopyActionButton(identity: identity, label: String(localized: "Copy code")) {
+                    let pasteboard = NSPasteboard.general
+                    let previousChange = pasteboard.changeCount
+                    configuration.codeBlock.copyToPasteboard()
+                    return pasteboard.changeCount > previousChange && pasteboard.string(forType: .string) != nil
+                }
+            }.padding(10).background(Theme.secondary.opacity(0.07))
+            Overflow {
+                configuration.label
+                    .font(.custom("Menlo", size: 13, relativeTo: .callout))
+                    .textual.lineSpacing(.fontScaled(0))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(14)
+            }
+        }
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.outline).allowsHitTesting(false))
+        .textual.blockSpacing(.init(top: 0, bottom: 16))
+    }
+}
+
+/// Non-Markdown technical output, such as configuration diffs, retains literal source copying.
 struct CodeBlock: View {
     let language: String
     let source: String
@@ -115,32 +88,47 @@ struct CodeBlock: View {
             }.padding(10).background(Theme.secondary.opacity(0.07))
             ScrollView(.horizontal) {
                 Text(verbatim: source).font(.system(.callout, design: .monospaced))
+                    .fixedSize(horizontal: true, vertical: true)
                     .textSelection(.enabled).padding(14)
             }
-
+            .fixedSize(horizontal: false, vertical: true)
         }
         .background(Theme.panel, in: RoundedRectangle(cornerRadius: 10))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.secondary.opacity(0.15)).allowsHitTesting(false))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.outline).allowsHitTesting(false))
     }
 }
 
-/// Copies the complete original text, including paragraphs, lists, and fenced code.
+/// Copies complete original messages or technical source, independent of text selection.
 struct CopyTextButton: View {
     let text: String
     var label = String(localized: "Copy message")
     var compact = false
     var pasteboard: NSPasteboard = .general
+
+    var body: some View {
+        CopyActionButton(identity: text, label: label, compact: compact) {
+            MessageClipboard.copy(text, to: pasteboard)
+        }
+    }
+}
+
+/// Native copy hit targets and explicit failure feedback are shared with Textual's code actions.
+private struct CopyActionButton: View {
+    let identity: String
+    let label: String
+    var compact = false
+    let copy: () -> Bool
     @State private var copied = false
     @State private var copyFailed = false
 
     var body: some View {
         NativeCopyControl(label: copied ? String(localized: "Copied") : label, compact: compact, copied: copied) {
-            copied = MessageClipboard.copy(text, to: pasteboard)
+            copied = copy()
             copyFailed = !copied
         }
         .fixedSize()
-        .onChange(of: text) { copied = false }
+        .onChange(of: identity) { copied = false }
         .alert("Couldn’t copy text", isPresented: $copyFailed) {
             Button("OK", role: .cancel) {}
         } message: {

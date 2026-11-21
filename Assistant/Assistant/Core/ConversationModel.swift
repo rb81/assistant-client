@@ -304,6 +304,7 @@ final class ConversationModel {
     init(defaults: UserDefaults = .standard, reminderHistory: Bool = false) {
         self.defaults = defaults
         self.reminderHistory = reminderHistory
+        channel = reminderHistory ? "" : "client"
     }
 
     /// Reconnect and relaunch restore transcripts only after the server identity has been verified.
@@ -312,8 +313,9 @@ final class ConversationModel {
         guard cacheKey != key else { return }
         clear()
         cacheKey = key
-        let savedScope = defaults.string(forKey: "\(key).scope") ?? ""
-        channel = ["", "client", "telegram", "email"].contains(savedScope) ? savedScope : ""
+        let defaultScope = reminderHistory ? "" : "client"
+        let savedScope = defaults.string(forKey: "\(key).scope") ?? defaultScope
+        channel = ["", "client", "telegram", "email"].contains(savedScope) ? savedScope : defaultScope
         guard let data = defaults.data(forKey: key) else { return }
         let saved = try JSONDecoder().decode(ConversationCache.self, from: data)
         cache = saved.transcripts
@@ -400,7 +402,7 @@ final class ConversationModel {
         refreshVersion += 1
         conversations = []; selectedThread = nil; draft = ""
         cacheKey = nil
-        search = ""; channel = ""; research = false
+        search = ""; channel = reminderHistory ? "" : "client"; research = false
         totalConversations = 0; listPage = 0; listFetchedAt = nil; error = nil
         drafts = [:]; cache = [:]; savedConversations = [:]; readVersions = [:]; cacheKey = nil
         deliveries = [:]; activityUnsupported = false
@@ -677,7 +679,10 @@ final class ConversationModel {
               let clientID = model.clientID else { return }
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, selected?.deleted != true else { return }
+        let submittedDraft = draft
+        let draftKey = selectedThread ?? "new"
         sending = true
+        draft = ""
         refreshVersion += 1
         let current = generation
         pendingUnconfirmed = false
@@ -701,8 +706,7 @@ final class ConversationModel {
             guard generation == current else { return }
             accepted = true
             pendingRequestID = result["request_id"]?.integer.map(Int.init)
-            drafts[selectedThread ?? "new"] = nil
-            draft = ""
+            drafts[draftKey] = nil
             guard let id = result["task_id"]?.integer else { throw ClientError.malformedResponse }
             let task = try await chatTask(model, id: Int(id))
             if let index = conversations.firstIndex(where: { $0.threadID == task.threadID }) {
@@ -724,6 +728,10 @@ final class ConversationModel {
         } catch {
             guard generation == current else { return }
             pendingUnconfirmed = !accepted || pendingRequestID == nil
+            if !accepted {
+                draft = submittedDraft
+                drafts[draftKey] = submittedDraft
+            }
             self.error = error.presentableMessage ?? self.error
         }
     }

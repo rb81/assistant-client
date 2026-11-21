@@ -265,7 +265,9 @@ struct InboxView: View {
                     }
                 }
                 .onPreferenceChange(TranscriptFrame.self) { frame in
-                    scrollState.update(frame: frame, viewportHeight: viewport.size.height)
+                    if scrollState.update(frame: frame, viewportHeight: viewport.size.height), !loadingEarlier {
+                        reader.scrollTo("transcript-end", anchor: .bottom)
+                    }
                 }
                 .onChange(of: transcriptTail) { old, new in
                     if old.thread != new.thread {
@@ -336,7 +338,10 @@ struct InboxView: View {
                 Text("Earlier tool calls in this conversation are not shown.")
                     .font(.caption).foregroundStyle(Theme.secondary)
             }
-            ForEach(chat.timeline) { item in
+            ForEach(chat.timeline.filter {
+                if case .tools = $0 { return showToolCalls }
+                return true
+            }) { item in
                 switch item {
                 case .message(let message): messageView(message)
                 case .tools(let calls): if showToolCalls { ToolRunView(calls: calls) }
@@ -346,10 +351,13 @@ struct InboxView: View {
                 Label("Deleted task. Conversation and shared data are preserved. This chat is read-only.",
                       systemImage: "lock").font(.callout).foregroundStyle(Theme.secondary)
             }
-            Color.clear.frame(height: 1).id("transcript-end")
         }
         .frame(maxWidth: Theme.contentWidth, alignment: .leading)
-        .padding(28).frame(maxWidth: .infinity)
+        .padding(.horizontal, 28).padding(.top, 28).padding(.bottom, 16)
+        .frame(maxWidth: .infinity)
+        .background(alignment: .bottom) {
+            Color.clear.frame(height: 1).id("transcript-end")
+        }
         .background {
             GeometryReader { content in
                 Color.clear.preference(key: TranscriptFrame.self,

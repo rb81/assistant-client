@@ -7,7 +7,8 @@ struct TranscriptScrollState {
     private static let bottomTolerance: CGFloat = 48
 
     /// Content growth is not a user scroll; only an offset change at a stable height changes intent.
-    mutating func update(frame: CGRect, viewportHeight: CGFloat) {
+    @discardableResult
+    mutating func update(frame: CGRect, viewportHeight: CGFloat) -> Bool {
         let nearBottom = frame.maxY <= viewportHeight + Self.bottomTolerance
         let heightChanged = previousFrame.map { abs($0.height - frame.height) > 0.5 } ?? true
         if let previousFrame, !heightChanged, abs(previousFrame.minY - frame.minY) > 0.5 {
@@ -16,5 +17,6 @@ struct TranscriptScrollState {
             followsLatest = true
         }
         previousFrame = frame
+        return heightChanged && followsLatest
     }
 }
