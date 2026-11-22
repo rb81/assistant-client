@@ -311,6 +311,15 @@ struct ModelOverviewField: Decodable, Identifiable, Sendable {
     }
 }
 
+/// A server-owned link to the page containing a model's other controls.
+struct ModelSettingsLink: Decodable, Identifiable, Sendable {
+    let group: String
+    let title: String
+    let destination: String
+    let fieldKey: String
+    var id: String { "\(destination):\(group)" }
+}
+
 /// Server-owned sections keep model roles and advanced fields consistent across clients.
 struct ModelOverviewSection: Decodable, Identifiable, Sendable {
     let id: String
@@ -319,6 +328,13 @@ struct ModelOverviewSection: Decodable, Identifiable, Sendable {
     let enabled: Bool?
     let summaryKeys: [String]
     let settings: [ModelOverviewField]
+    var selectionKeys: [String]? = nil
+    var relatedSettings: [ModelSettingsLink]? = nil
+
+    /// Older snapshots remain readable, but quick editing needs server-owned selector metadata.
+    var selections: [ModelOverviewField] {
+        (selectionKeys ?? []).compactMap { key in settings.first { $0.id == key } }
+    }
 
     /// Summary rows retain the server's chosen ordering without duplicating stored fields.
     var summary: [ModelOverviewField] {
@@ -344,6 +360,15 @@ struct ModelSettingsOverview: Decodable, Sendable {
         guard Set(fields.map(\.id)).count == fields.count,
               sections.allSatisfy({ section in
                   section.summaryKeys.allSatisfy { key in section.settings.contains { $0.id == key } }
+                      && Set(section.selectionKeys ?? []).count == (section.selectionKeys ?? []).count
+                      && Set((section.relatedSettings ?? []).map(\.id)).count == (section.relatedSettings ?? []).count
+                      && (section.selectionKeys ?? []).allSatisfy { key in
+                          section.settings.contains { $0.id == key && !$0.field.secret }
+                      }
+                      && (section.relatedSettings ?? []).allSatisfy { link in
+                          ["assistant", "models", "connections", "safety", "advanced"].contains(link.destination)
+                              && section.settings.contains { $0.id == link.fieldKey }
+                      }
               }),
               fields.allSatisfy({ field in
                   field.valueSource != .inherited || fields.contains { $0.id == field.inheritedFrom }
@@ -355,12 +380,12 @@ struct ModelSettingsOverview: Decodable, Sendable {
     /// Search includes values and inherited-role labels, but never credential values.
     func matchingSections(_ query: String) -> [ModelOverviewSection] {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return sections }
+        guard !query.isEmpty else { return sections.filter { !$0.selections.isEmpty } }
         return sections.compactMap { section in
             let sectionMatches = [section.title, section.provider].contains {
                 $0.localizedCaseInsensitiveContains(query)
             }
-            let settings = section.settings.filter { field in
+            let settings = section.selections.filter { field in
                 sectionMatches || [field.field.label, field.id, field.displayValue, field.field.help ?? ""]
                     .contains { $0.localizedCaseInsensitiveContains(query) }
             }
@@ -368,7 +393,8 @@ struct ModelSettingsOverview: Decodable, Sendable {
             return ModelOverviewSection(id: section.id, title: section.title, provider: section.provider,
                                         enabled: section.enabled,
                                         summaryKeys: section.summaryKeys.filter { key in settings.contains { $0.id == key } },
-                                        settings: settings)
+                                        settings: settings, selectionKeys: section.selectionKeys,
+                                        relatedSettings: section.relatedSettings)
         }
     }
 }

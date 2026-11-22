@@ -3,6 +3,8 @@ import SwiftUI
 /// Task-oriented server settings use structured pages, immutable review and explicit activation.
 struct ConfigurationView: View {
     let model: ClientModel
+    @Binding var location: SettingsLocation
+    let navigate: (SettingsPage, SettingsCategory) -> Void
     @State private var configuration: FullConfiguration?
     @State private var catalogSnapshot: JSONValue?
     @State private var credentials: [SavedCredential] = []
@@ -17,9 +19,7 @@ struct ConfigurationView: View {
     @State private var loadingGroups: Set<String> = []
     @State private var instructionsLoading = false
     @State private var loadGeneration = UUID()
-    @State private var category = SettingsCategory.assistant
-    @State private var page = SettingsPage.group("identity")
-    @State private var search = ""
+    @State private var scrollMemory = ScrollMemory()
     @State private var acknowledge = false
     @State private var preview: JSONValue?
     @State private var reviewedPayload: [String: JSONValue]?
@@ -35,6 +35,7 @@ struct ConfigurationView: View {
     @State private var offerFirstChat = false
     @State private var showingFeedback = false
     @State private var showingInstructionPreview = false
+    @State private var showingReview = false
     @State private var modelAccess: [String: String] = [:]
     @State private var modelAccessLoaded = false
     @State private var modelOverview: ModelSettingsOverview?
@@ -43,6 +44,9 @@ struct ConfigurationView: View {
     @AppStorage("settings.showIdentifiers") private var showIdentifiers = false
 
     private var navigation: SettingsNavigation? { (configuration ?? model.settingsMenu).map(SettingsNavigation.init) }
+    private var category: SettingsCategory { location.category }
+    private var page: SettingsPage { location.page }
+    private var search: String { location.search }
 
     /// All changes stay in memory until a server-reviewed draft is explicitly confirmed.
     var body: some View {
@@ -63,13 +67,7 @@ struct ConfigurationView: View {
         }
         .task(id: page) { await loadPage() }
         .onChange(of: search) { if !search.isEmpty { searchFocus = nil } }
-        .confirmationDialog(apply ? "Save and activate reviewed changes?" : "Save reviewed changes?",
-                            isPresented: $confirming, titleVisibility: .visible) {
-            Button(apply ? "Save & Apply" : "Save configuration") { Task { await save() } }
-        } message: {
-            Text(apply ? "Affected application services will be started or recreated. Active work may be interrupted. Enabled connections may begin processing messages." :
-                 "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready.")
-        }
+        .sheet(isPresented: $showingReview) { draftReview }
         .alert("Discard unsaved configuration changes?", isPresented: $confirmingDiscard) {
             Button("Discard draft", role: .destructive) { Task { await discardDraft() } }
             Button("Cancel", role: .cancel) {}
@@ -151,9 +149,9 @@ struct ConfigurationView: View {
                 Spacer(minLength: 4)
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").accessibilityHidden(true)
-                    TextField("Find a setting", text: $search).textFieldStyle(.plain)
+                    TextField("Find a setting", text: $location.search).textFieldStyle(.plain)
                         .accessibilityIdentifier("settings-search")
-                    Button("Clear search", systemImage: "xmark.circle.fill") { search = "" }
+                    Button("Clear search", systemImage: "xmark.circle.fill") { location.search = "" }
                         .labelStyle(.iconOnly).buttonStyle(.plain)
                         .opacity(search.isEmpty ? 0 : 1).disabled(search.isEmpty)
                         .accessibilityHidden(search.isEmpty)
@@ -184,12 +182,26 @@ struct ConfigurationView: View {
                 } else {
                     ProgressView("Loading settings…").frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-            } else if page == .instructions && search.isEmpty {
-                instructionsEditor
-                    .padding(.horizontal, 20).padding(.bottom, 20)
-                    .accessibilityIdentifier("settings-detail")
             } else {
-            ScrollViewReader { reader in
+                ZStack(alignment: .topLeading) {
+                    if page == .instructions || instructionsLoaded {
+                        instructionsEditor
+                            .padding(.horizontal, 20).padding(.bottom, 20)
+                            .accessibilityIdentifier("settings-detail")
+                            .opacity(page == .instructions && search.isEmpty ? 1 : 0)
+                            .allowsHitTesting(page == .instructions && search.isEmpty)
+                            .accessibilityHidden(page != .instructions || !search.isEmpty)
+                            .disabled(page != .instructions || !search.isEmpty)
+                    }
+                    if page != .instructions || !search.isEmpty { scrollingDetail }
+                }
+            }
+        }.frame(minWidth: Theme.settingsDetailMinimum, maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Non-editor pages share scroll restoration and deep links to individual controls.
+    private var scrollingDetail: some View {
+        ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if configuration?.setupComplete == false {
@@ -204,38 +216,43 @@ struct ConfigurationView: View {
                     if page == .modelOverview {
                         ModelSettingsOverviewView(overview: modelOverview, loading: modelOverviewLoading,
                                                   error: modelOverviewError, search: search,
-                                                  hasDraft: model.configurationDirty,
-                                                  edit: openModelEditor)
+                                                  modelRow: settingRow, openSettings: openRelatedSettings)
                     } else if !search.isEmpty { searchResults }
                     else {
                         switch page {
                         case .group(let id): groupPage(id)
-                        case .instructions: instructionsEditor
+                        case .instructions: EmptyView()
                         case .skills: SkillsSettingsView(model: model)
                         case .app: AppPreferencesView(model: model)
                         case .modelOverview: EmptyView()
                         }
                     }
                     if configuration?.setupComplete == false { setupAcknowledgment }
-                    if let preview { changeReview(preview) }
                 }
                 .frame(maxWidth: Theme.contentWidth, alignment: .leading)
                 .padding(.horizontal, 20).padding(.bottom, 20).disabled(busy)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .id(page)
+            .rememberingScroll(location, in: scrollMemory, ready: pageScrollReady)
+            .id(location)
             .accessibilityIdentifier("settings-detail")
             .task(id: searchFocus) {
                 guard let searchFocus else { return }
                 reader.scrollTo(searchFocus, anchor: .center)
             }
-            }
-            }
-        }.frame(minWidth: Theme.settingsDetailMinimum, maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private var footerLoading: Bool {
         busy || !loadingGroups.isEmpty || instructionsLoading || modelOverviewLoading || (configuration == nil && error == nil)
+    }
+
+    private var pageScrollReady: Bool {
+        switch page {
+        case .group(let id): return loadedGroups.contains(id)
+        case .modelOverview: return modelOverview != nil
+        default: return true
+        }
     }
 
     private var footerTitle: String {
@@ -289,42 +306,34 @@ struct ConfigurationView: View {
                 if model.configurationDirty {
                     Button("Discard draft…") { confirmingDiscard = true }.disabled(busy)
                 }
-                if canSave {
-                    if configuration?.setupComplete == false {
-                        Button("Save & Start") { apply = true; confirming = true }
-                            .buttonStyle(PrimaryButtonStyle()).disabled(busy)
-                    } else {
-                        Button("Save & Apply") { apply = true; confirming = true }.disabled(busy)
-                        Button("Save changes") { apply = false; confirming = true }
-                            .buttonStyle(PrimaryButtonStyle()).disabled(busy)
-                    }
-                } else {
+                if !canSave {
                     if !model.configurationDirty && model.activationState != .active {
                         Button("Review & Apply") { model.activationReviewPresented = true }.disabled(busy)
                     }
-                    Button("Review changes") { Task { await review() } }
-                        .buttonStyle(PrimaryButtonStyle()).disabled(!model.configurationDirty || busy)
                 }
+                Button("Review changes") {
+                    if preview != nil { showingReview = true }
+                    else { Task { await review() } }
+                }
+                .buttonStyle(PrimaryButtonStyle()).disabled(!model.configurationDirty || busy)
             }
         }
     }
 
     private func selectPage(_ destination: SettingsPage, in scope: SettingsCategory) {
-        category = scope
-        page = destination
-        search = ""
+        navigate(destination, scope)
         searchFocus = nil
     }
 
-    /// Navigate to the owning editor without replacing an existing draft or hiding advanced fields.
-    private func openModelEditor(_ field: SettingField) {
-        guard let navigation, let owner = navigation.group(field.group) else {
+    /// Follow the server's owning page and reveal the first associated control.
+    private func openRelatedSettings(_ link: ModelSettingsLink) {
+        guard let scope = SettingsCategory(rawValue: link.destination),
+              navigation?.group(link.group) != nil else {
             modelOverviewError = String(localized: "This model setting’s editor is unavailable. Reload settings.")
             return
         }
-        let root = owner.parent.flatMap(navigation.group) ?? owner
-        selectPage(.group(root.id), in: navigation.category(for: root, field: field))
-        searchFocus = field.key
+        selectPage(.group(link.group), in: scope)
+        searchFocus = link.fieldKey
     }
 
     // MARK: - Pages
@@ -395,16 +404,21 @@ struct ConfigurationView: View {
     private func fieldList(_ fields: [SettingField]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             ForEach(fields) { field in
-                SettingRow(field: field, showIdentifier: showIdentifiers,
-                           credential: credentials.first { $0.name == field.key },
-                           credentialStatusLoaded: credentialStatusLoaded,
-                           modelCatalog: model.modelCatalog, modelPurpose: modelPurpose(field),
-                           zdrOnly: zdrOnly(field), choices: voiceChoices(field), value: binding(field))
-                    .disabled(ModelPurpose.forSetting(field.key) != nil && !modelAccessLoaded)
+                settingRow(field)
                     .id(field.key)
                 if field.id != fields.last?.id { Divider() }
             }
         }
+    }
+
+    /// Quick model edits and full settings pages share bindings, eligibility, and draft review.
+    private func settingRow(_ field: SettingField) -> some View {
+        SettingRow(field: field, showIdentifier: showIdentifiers,
+                   credential: credentials.first { $0.name == field.key },
+                   credentialStatusLoaded: credentialStatusLoaded,
+                   modelCatalog: model.modelCatalog, modelPurpose: modelPurpose(field),
+                   zdrOnly: zdrOnly(field), choices: voiceChoices(field), value: binding(field))
+            .disabled(ModelPurpose.forSetting(field.key) != nil && !modelAccessLoaded)
     }
 
     private func effectiveValue(_ key: String) -> String {
@@ -531,6 +545,7 @@ struct ConfigurationView: View {
                     ScrollView {
                         MarkdownContent(text: instructions).padding(16).frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .rememberingScroll("instructions-preview", in: scrollMemory, ready: instructionsLoaded)
                 } else {
                     MarkdownEditor(text: $instructions)
                         .disabled(!instructionsLoaded || busy)
@@ -541,9 +556,6 @@ struct ConfigurationView: View {
             .background(Theme.panel, in: RoundedRectangle(cornerRadius: Theme.radius))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radius))
             .overlay(RoundedRectangle(cornerRadius: Theme.radius).strokeBorder(Theme.outline).allowsHitTesting(false))
-            if let preview {
-                ScrollView { changeReview(preview) }.frame(maxHeight: 150)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -610,6 +622,7 @@ struct ConfigurationView: View {
     /// Editing any part of the draft invalidates previous server confirmation.
     private func invalidatePreview() {
         preview = nil; reviewedPayload = nil
+        showingReview = false
         model.configurationDirty = !values.isEmpty || (instructionsLoaded && instructions != instructionsOriginal) || acknowledge
         if model.configurationDirty { notice = nil }
     }
@@ -650,7 +663,7 @@ struct ConfigurationView: View {
             catalogSnapshot = result
             model.setupRequired = configuration?.setupComplete == false
             if model.setupRequired, values.isEmpty, let first = navigation?.pages(in: .models).first {
-                category = .models; page = .group(first.id)
+                selectPage(.group(first.id), in: .models)
             }
             instructions = ""; instructionsOriginal = ""; instructionsLoaded = false
             loadedGroups = []; loadedFields = [:]
@@ -719,6 +732,9 @@ struct ConfigurationView: View {
                     let overview = try await model.modelSettingsOverview(revision: configuration.revision)
                     guard loadGeneration == current, !Task.isCancelled else { return }
                     modelOverview = overview
+                    for item in overview.sections.flatMap(\.settings) {
+                        loadedFields[item.id] = item.field
+                    }
                     modelOverviewError = nil
                 } catch {
                     guard loadGeneration == current, !Task.isCancelled else { return }
@@ -766,6 +782,7 @@ struct ConfigurationView: View {
         do {
             preview = try await model.query("configuration/preview", payload: .object(payload))
             reviewedPayload = payload; error = nil
+            showingReview = true
         } catch { self.error = error.presentableMessage ?? self.error }
     }
 
@@ -801,11 +818,45 @@ struct ConfigurationView: View {
         }
     }
 
+    /// Draft review stays visible regardless of the page's current scroll position.
+    private var draftReview: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Review your changes").font(.title2.weight(.semibold))
+            ScrollView {
+                if let preview { changeReview(preview) }
+                if let error { ErrorBanner(message: error) }
+            }
+            HStack {
+                StableProgress(active: busy)
+                Spacer()
+                Button("Keep editing") { showingReview = false }
+                    .keyboardShortcut(.cancelAction).disabled(busy)
+                if configuration?.setupComplete == false {
+                    Button("Save & Start") { apply = true; confirming = true }
+                        .buttonStyle(PrimaryButtonStyle()).disabled(!canSave || busy)
+                } else {
+                    Button("Save & Apply") { apply = true; confirming = true }.disabled(!canSave || busy)
+                    Button("Save changes") { apply = false; confirming = true }
+                        .buttonStyle(PrimaryButtonStyle()).disabled(!canSave || busy)
+                }
+            }
+        }
+        .padding(24).frame(width: 660, height: 540)
+        .interactiveDismissDisabled(busy)
+        .accessibilityIdentifier("settings-draft-review")
+        .confirmationDialog(apply ? "Save and activate reviewed changes?" : "Save reviewed changes?",
+                            isPresented: $confirming, titleVisibility: .visible) {
+            Button(apply ? "Save & Apply" : "Save configuration") { Task { await save() } }
+        } message: {
+            Text(apply ? "Affected application services will be started or recreated. Active work may be interrupted. Enabled connections may begin processing messages." :
+                 "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready.")
+        }
+    }
+
     /// Review emphasizes actual changes and validation problems instead of a JSON dump.
     private func changeReview(_ preview: JSONValue) -> some View {
         ManagementPanel {
             VStack(alignment: .leading, spacing: 12) {
-                Text("Review your changes").font(.headline)
                 ForEach(Array((preview["problems"]?.array ?? []).enumerated()), id: \.offset) { _, problem in
                     if let text = problem.string { ErrorBanner(message: text) }
                 }

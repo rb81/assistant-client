@@ -2,7 +2,7 @@ import XCTest
 
 /// Native launch smoke test performs no server connection.
 final class AssistantUITests: XCTestCase {
-    /// One saved overview exposes disabled roles and retains the existing advanced editor.
+    /// Model choices are directly editable, while tuning links retain the owning editor.
     @MainActor
     func testModelSettingsOverviewLightAndDark() {
         for dark in [false, true] {
@@ -13,13 +13,10 @@ final class AssistantUITests: XCTestCase {
             let overview = app.buttons["settings-section-models-overview"]
             XCTAssertTrue(overview.waitForExistence(timeout: 10))
             overview.click()
-            let primary = app.buttons["model-overview-edit-AGENT_LLM_MODEL"]
+            let primary = app.buttons["Choose OpenRouter model"].firstMatch
             XCTAssertTrue(primary.waitForExistence(timeout: 10), app.debugDescription)
-            XCTAssertTrue(app.staticTexts["Configured"].exists)
-            let search = app.textFields["settings-search"]
-            search.click()
-            search.typeText("temperature")
-            let edit = app.buttons["model-overview-edit-AGENT_LLM_TEMPERATURE"]
+            XCTAssertFalse(app.staticTexts["Model temperature"].exists)
+            let edit = app.buttons["model-settings-link-task-advanced:catalog:llm"]
             XCTAssertTrue(edit.waitForExistence(timeout: 10), app.debugDescription)
             capture(app, name: dark ? "Model overview dark" : "Model overview light")
             edit.click()
@@ -126,6 +123,8 @@ final class AssistantUITests: XCTestCase {
         let save = app.buttons["Save changes"]
         XCTAssertTrue(save.waitForExistence(timeout: 5), "Review must expose the draft's save actions")
         XCTAssertTrue(save.isHittable)
+        XCTAssertTrue(app.otherElements["settings-draft-review"].exists)
+        app.buttons["Keep editing"].click()
         app.buttons["Discard draft…"].click()
         let discard = app.buttons["Discard draft"]
         XCTAssertTrue(discard.waitForExistence(timeout: 5))

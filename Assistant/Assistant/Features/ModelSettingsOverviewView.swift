@@ -1,32 +1,33 @@
 import SwiftUI
 
-/// A single searchable, read-only view of saved model settings, including disabled features.
-struct ModelSettingsOverviewView: View {
+/// A focused model editor; provider configuration and tuning stay on their owning pages.
+struct ModelSettingsOverviewView<ModelRow: View>: View {
     let overview: ModelSettingsOverview?
     let loading: Bool
     let error: String?
     let search: String
-    let hasDraft: Bool
-    let edit: (SettingField) -> Void
-    @State private var collapsedSections: Set<String> = []
+    @ViewBuilder let modelRow: (SettingField) -> ModelRow
+    let openSettings: (ModelSettingsLink) -> Void
 
     /// Existing theme panels and controls preserve the app's native settings presentation.
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("Model settings").font(Theme.pageTitle).accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("model-settings-overview")
-            Text("Saved settings only. Running models and provider availability are not verified.")
+            Text("Choose models here. Provider, safety, voice, and tuning controls stay in the linked settings pages. Changes use the same reviewed draft.")
                 .foregroundStyle(Theme.secondary)
-            if hasDraft {
-                Label("Local draft changes are not shown here.", systemImage: "pencil.circle")
-                    .foregroundStyle(Theme.secondary)
-            }
 
             if let error {
                 ContentUnavailableView("Model settings unavailable", systemImage: "exclamationmark.triangle",
                                        description: Text(error))
             } else if loading || overview == nil {
-                ProgressView("Loading model settings…")
+                HStack {
+                    StableProgress(active: true)
+                    Text("Loading model settings…").foregroundStyle(Theme.secondary)
+                }
+            } else if overview?.sections.contains(where: { $0.selectionKeys == nil || $0.relatedSettings == nil }) == true {
+                ContentUnavailableView("Update the server", systemImage: "arrow.up.circle",
+                                       description: Text("Quick model editing requires updated model settings metadata. Use the existing settings pages until the server is updated."))
             } else if let overview {
                 activationNotice(overview)
                 let sections = overview.matchingSections(search)
@@ -37,20 +38,30 @@ struct ModelSettingsOverviewView: View {
                     ManagementPanel {
                         VStack(alignment: .leading, spacing: 12) {
                             sectionHeader(section)
-                            DisclosureGroup(isExpanded: Binding(
-                                get: { !search.isEmpty || !collapsedSections.contains(section.id) },
-                                set: { expanded in
-                                    if expanded { collapsedSections.remove(section.id) }
-                                    else { collapsedSections.insert(section.id) }
-                                }
-                            )) {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    ForEach(section.settings) { field in
-                                        settingRow(field, overview: overview)
+                            ForEach(section.selections) { item in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    modelRow(item.field)
+                                        .accessibilityIdentifier("model-overview-edit-\(item.id)")
+                                    if item.valueSource == .inherited || item.valueSource == .providerDefault {
+                                        Text("Saved effective model: \(item.displayValue)")
+                                            .font(.caption).foregroundStyle(Theme.secondary)
                                     }
-                                }.padding(.top, 12)
-                            } label: {
-                                Text("All settings").font(.callout)
+                                    if item.pendingActivation {
+                                        Label("Saved model needs applying", systemImage: "clock")
+                                            .font(.caption).foregroundStyle(Theme.secondary)
+                                    }
+                                }
+                            }
+                            if let links = section.relatedSettings, !links.isEmpty {
+                                Divider()
+                                Text("Other settings").font(.caption).foregroundStyle(Theme.secondary)
+                                ForEach(links) { link in
+                                    Button { openSettings(link) } label: {
+                                        Label(link.title, systemImage: "arrow.up.right")
+                                    }
+                                    .buttonStyle(.link)
+                                    .accessibilityIdentifier("model-settings-link-\(section.id)-\(link.id)")
+                                }
                             }
                         }
                     }
@@ -87,39 +98,6 @@ struct ModelSettingsOverviewView: View {
             }
             Text("Provider / service: \(section.provider)")
                 .font(.caption).foregroundStyle(Theme.secondary).textSelection(.enabled)
-            ForEach(section.summary) { field in
-                Text("\(field.field.label): \(field.displayValue)")
-                    .font(.callout).textSelection(.enabled)
-            }
-        }
-    }
-
-    /// Secret fields show presence only; editor links reuse the revision-reviewed save flow.
-    private func settingRow(_ item: ModelOverviewField, overview: ModelSettingsOverview) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top) {
-                Text(item.field.label).font(.callout.weight(.medium))
-                Spacer(minLength: 12)
-                Button("Edit") { edit(item.field) }
-                    .buttonStyle(.borderless)
-                    .accessibilityLabel(Text("Edit \(item.field.label)"))
-                    .accessibilityIdentifier("model-overview-edit-\(item.id)")
-            }
-            Text(item.displayValue).font(.system(.callout, design: .monospaced))
-                .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-            if item.valueSource == .inherited, let key = item.inheritedFrom,
-               let parent = overview.sections.flatMap(\.settings).first(where: { $0.id == key }) {
-                Text("Inherited from \(parent.field.label)").font(.caption).foregroundStyle(Theme.secondary)
-            } else if item.valueSource == .providerDefault {
-                Text("Provider default").font(.caption).foregroundStyle(Theme.secondary)
-            }
-            if item.pendingActivation {
-                Label("Needs applying", systemImage: "clock").font(.caption).foregroundStyle(Theme.secondary)
-            }
-            if let help = item.field.help {
-                Text(help).font(.caption).foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
     }
 }
@@ -133,7 +111,8 @@ private struct ModelSettingsOverviewPreview: View {
     var body: some View {
         ScrollView {
             ModelSettingsOverviewView(overview: overview, loading: overview == nil && error == nil,
-                                      error: error, search: "", hasDraft: false, edit: { _ in })
+                                      error: error, search: "",
+                                      modelRow: { field in Text(field.value) }, openSettings: { _ in })
                 .padding(20)
         }
         .frame(width: Theme.contentWidth, height: 700)

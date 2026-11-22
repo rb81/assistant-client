@@ -46,6 +46,58 @@ struct StableProgress: View {
                     visible = true
                 } catch { return }
             }
+
+    }
+}
+
+/// Session-only offsets are keyed by the complete destination, including category and search.
+final class ScrollMemory {
+    private var offsets: [AnyHashable: CGPoint] = [:]
+
+    func offset(for key: AnyHashable) -> CGPoint { offsets[key] ?? .zero }
+    func remember(_ offset: CGPoint, for key: AnyHashable) { offsets[key] = offset }
+}
+
+/// Native point-based restoration preserves the exact viewport rather than just a nearby row.
+private struct RememberedScroll: ViewModifier {
+    let key: AnyHashable
+    let memory: ScrollMemory
+    let ready: Bool
+    @State private var position: ScrollPosition
+    @State private var offset: CGPoint
+
+    init(key: AnyHashable, memory: ScrollMemory, ready: Bool) {
+        self.key = key
+        self.memory = memory
+        self.ready = ready
+        let saved = memory.offset(for: key)
+        var initial = ScrollPosition(edge: .top)
+        initial.scrollTo(point: saved)
+        _position = State(initialValue: initial)
+        _offset = State(initialValue: saved)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .scrollPosition($position)
+            .onScrollGeometryChange(for: CGPoint.self) { $0.contentOffset } action: { _, point in
+                guard ready else { return }
+                offset = point
+                if position.isPositionedByUser { memory.remember(point, for: key) }
+            }
+            .onChange(of: ready) { _, ready in
+                if ready { position.scrollTo(point: memory.offset(for: key)) }
+            }
+            .onDisappear {
+                if ready { memory.remember(offset, for: key) }
+            }
+    }
+}
+
+extension View {
+    /// Apply inside a destination identity so each visit owns a separate native scroll binding.
+    func rememberingScroll(_ key: AnyHashable, in memory: ScrollMemory, ready: Bool = true) -> some View {
+        modifier(RememberedScroll(key: key, memory: memory, ready: ready))
     }
 }
 

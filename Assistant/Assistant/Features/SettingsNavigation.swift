@@ -9,6 +9,46 @@ enum SettingsPage: Hashable {
     case modelOverview
 }
 
+/// A settings visit retains its category and search independently of its scroll position.
+struct SettingsLocation: Hashable {
+    var category = SettingsCategory.assistant
+    var page = SettingsPage.group("identity")
+    var search = ""
+}
+
+/// Browser-style history records visits, not redraws, and discards forward visits after a new branch.
+struct NavigationHistory<Location: Equatable> {
+    private(set) var current: Location
+    private var previous: [Location] = []
+    private var following: [Location] = []
+    var canGoBack: Bool { !previous.isEmpty }
+    var canGoForward: Bool { !following.isEmpty }
+
+    init(_ current: Location) { self.current = current }
+
+    /// Capture in-place state such as a search query before leaving a visit.
+    mutating func update(_ location: Location) { current = location }
+
+    mutating func visit(_ location: Location) {
+        guard location != current else { return }
+        previous.append(current)
+        current = location
+        following.removeAll()
+    }
+
+    mutating func back() {
+        guard let location = previous.popLast() else { return }
+        following.append(current)
+        current = location
+    }
+
+    mutating func forward() {
+        guard let location = following.popLast() else { return }
+        previous.append(current)
+        current = location
+    }
+}
+
 /// Stable product destinations replace catalog-level navigation.
 enum SettingsCategory: String, CaseIterable, Identifiable {
     case app, assistant, models, connections, safety, advanced

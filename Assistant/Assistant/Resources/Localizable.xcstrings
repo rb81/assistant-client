@@ -41,16 +41,6 @@
         }
       }
     },
-    "%@: %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@: %2$@"
-          }
-        }
-      }
-    },
     "%lld failed" : {
 
     },
@@ -140,9 +130,6 @@
     "All channels" : {
 
     },
-    "All settings" : {
-
-    },
     "Allow once" : {
 
     },
@@ -215,6 +202,9 @@
     "Awaiting more messages to name" : {
 
     },
+    "Back" : {
+
+    },
     "Block always" : {
 
     },
@@ -267,6 +257,9 @@
 
     },
     "Choose a model…" : {
+
+    },
+    "Choose models here. Provider, safety, voice, and tuning controls stay in the linked settings pages. Changes use the same reviewed draft." : {
 
     },
     "Clear cached conversations from this Mac?" : {
@@ -467,12 +460,6 @@
     "Earlier tool calls in this conversation are not shown." : {
 
     },
-    "Edit" : {
-
-    },
-    "Edit %@" : {
-
-    },
     "Edit preferences" : {
 
     },
@@ -515,6 +502,9 @@
     "Fit" : {
 
     },
+    "Forward" : {
+
+    },
     "General" : {
 
     },
@@ -543,9 +533,6 @@
 
     },
     "Incomplete setup" : {
-
-    },
-    "Inherited from %@" : {
 
     },
     "Inspect shipped workflows or publish custom guidance and preference overlays." : {
@@ -629,9 +616,6 @@
     "Loading verified preview…" : {
 
     },
-    "Local draft changes are not shown here." : {
-
-    },
     "Locked" : {
 
     },
@@ -681,9 +665,6 @@
 
     },
     "Needs Attention" : {
-
-    },
-    "Needs applying" : {
 
     },
     "Needs attention. View logs for details." : {
@@ -858,6 +839,9 @@
     "Organized automatically" : {
 
     },
+    "Other settings" : {
+
+    },
     "Parent folder" : {
 
     },
@@ -903,9 +887,6 @@
     "Provider / service: %@" : {
 
     },
-    "Provider default" : {
-
-    },
     "Public availability can differ from your account and may change." : {
 
     },
@@ -922,6 +903,9 @@
 
     },
     "Quick Look is unavailable. Download this document to open it." : {
+
+    },
+    "Quick model editing requires updated model settings metadata. Use the existing settings pages until the server is updated." : {
 
     },
     "Quit Assistant" : {
@@ -1152,7 +1136,13 @@
     "Saved conversations could not be read: %@" : {
 
     },
+    "Saved effective model: %@" : {
+
+    },
     "Saved key status unavailable" : {
+
+    },
+    "Saved model needs applying" : {
 
     },
     "Saved reminder history could not be read: %@" : {
@@ -1168,9 +1158,6 @@
 
     },
     "Saved settings need applying. Review and apply when you are ready." : {
-
-    },
-    "Saved settings only. Running models and provider availability are not verified." : {
 
     },
     "Saved values awaiting activation" : {
@@ -1573,6 +1560,9 @@
 
     },
     "Untitled conversation" : {
+
+    },
+    "Update the server" : {
 
     },
     "Updates" : {

@@ -243,6 +243,15 @@ actor PreviewManagementAPI: ManagementAPI {
                         "id": .string("task"), "title": .string("Task models & provider"),
                         "provider": .string("https://openrouter.ai/api/v1"), "enabled": .null,
                         "summary_keys": .array([.string("AGENT_LLM_MODEL")]),
+                        "selection_keys": .array([.string("AGENT_LLM_MODEL")]),
+                        "related_settings": .array([
+                            .object(["group": .string("models"), "title": .string("Models"),
+                                     "destination": .string("models"),
+                                     "field_key": .string("AGENT_LLM_OPENROUTER_API_KEY")]),
+                            .object(["group": .string("catalog:llm"), "title": .string("Generation & sampling"),
+                                     "destination": .string("advanced"),
+                                     "field_key": .string("AGENT_LLM_TEMPERATURE")])
+                        ]),
                         "settings": .array([
                             overviewSetting("models", "AGENT_LLM_MODEL", "Primary model", "example/model"),
                             overviewSetting("models", "AGENT_LLM_OPENROUTER_API_KEY", "OpenRouter API key", "",
@@ -254,6 +263,8 @@ actor PreviewManagementAPI: ManagementAPI {
                         "id": .string("research"), "title": .string("Deep research"),
                         "provider": .string("https://openrouter.ai/api/v1"), "enabled": .bool(true),
                         "summary_keys": .array([.string("AGENT_DEEP_RESEARCH_MODEL")]),
+                        "selection_keys": .array([.string("AGENT_DEEP_RESEARCH_MODEL")]),
+                        "related_settings": .array([]),
                         "settings": .array([
                             overviewSetting("catalog:deep_research", "AGENT_DEEP_RESEARCH_MODEL", "Deep research model", "",
                                             display: "example/model", source: "inherited", inherited: "AGENT_LLM_MODEL")
@@ -263,6 +274,8 @@ actor PreviewManagementAPI: ManagementAPI {
                         "id": .string("speech"), "title": .string("Speech generation"),
                         "provider": .string("https://openrouter.ai/api/v1"), "enabled": .bool(false),
                         "summary_keys": .array([.string("AGENT_TTS_MODEL")]),
+                        "selection_keys": .array([.string("AGENT_TTS_MODEL")]),
+                        "related_settings": .array([]),
                         "settings": .array([
                             overviewSetting("advanced:Model preset tool", "AGENT_TTS_MODEL", "Speech model", "example/speech")
                         ])

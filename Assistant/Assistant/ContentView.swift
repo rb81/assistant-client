@@ -8,7 +8,15 @@ struct ContentView: View {
     @State private var confirmingDiscard = false
     @State private var showingStatus = false
     @State private var settingsIdentity = UUID()
-    @State private var settingsOpened = false
+    @State private var openedDestinations: Set<Destination> = [.inbox]
+    @State private var settingsLocation = SettingsLocation()
+    @State private var history = NavigationHistory(Visit(destination: .inbox, settings: SettingsLocation()))
+
+    /// A visit captures both primary navigation and the settings subpage.
+    private struct Visit: Equatable {
+        let destination: Destination
+        let settings: SettingsLocation
+    }
 
     /// Each destination has a stable native sidebar identity.
     enum Destination: String, CaseIterable, Identifiable {
@@ -86,71 +94,48 @@ struct ContentView: View {
                     disconnected
                 } else {
                     if model.activationState != .active {
-                        HStack(spacing: 12) {
-                            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
-                            Text(model.activationState == .pending ? "Saved settings need applying" :
-                                    "Settings activation needs checking").font(.callout.weight(.medium))
-                            Spacer()
-                            Button("Review & Apply") { model.activationReviewPresented = true }
-                        }
-                        .padding(.horizontal, 20).padding(.vertical, 12).background(Theme.panel)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityIdentifier("pending-settings-banner")
+                        activationBanner
                         Divider()
                     }
-                    ZStack {
-                    if settingsOpened {
-                        ConfigurationView(model: model)
-                            .id(settingsIdentity)
-                            .opacity(selection == .configuration ? 1 : 0)
-                            .allowsHitTesting(selection == .configuration)
-                            .accessibilityHidden(selection != .configuration)
-                    }
-                    switch selection ?? .inbox {
-                    case .inbox: InboxView(model: model, chat: model.chats)
-                    case .reminders:
-                        InboxView(model: model, chat: model.reminderRuns, isReminders: true) { reminder in
-                            model.chats.newChat(about: reminder)
-                            navigate(.inbox)
-                        }
-                    case .configuration: EmptyView()
-                    case .services: ServicesView(model: model)
-                    case .data: DataManagementView(model: model)
-                    }
-                    }
+                    visitedPanes
                 }
             }
             .background(Theme.background)
             .foregroundStyle(Theme.ink)
             .navigationTitle((selection ?? .inbox).title)
             .toolbar {
-                if model.health != nil {
-                    let activityCount = model.unreadUpdates + model.pendingApprovals + model.unconfirmedReferences.count
-                    Button {
-                        model.activitySection = model.pendingApprovals > 0 ||
-                            !model.unconfirmedReferences.isEmpty ? .attention : .updates
-                        model.activityPresented = true
-                    } label: {
-                        Label(activityCount > 0 ?
-                              String(localized: "Activity (\(activityCount))") :
-                                String(localized: "Activity"), systemImage: "bell")
+                ToolbarItemGroup(placement: .navigation) {
+                    historyControls
+                }
+                ToolbarItemGroup {
+                    if model.health != nil {
+                        let activityCount = model.unreadUpdates + model.pendingApprovals + model.unconfirmedReferences.count
+                        Button {
+                            model.activitySection = model.pendingApprovals > 0 ||
+                                !model.unconfirmedReferences.isEmpty ? .attention : .updates
+                            model.activityPresented = true
+                        } label: {
+                            Label(activityCount > 0 ?
+                                  String(localized: "Activity (\(activityCount))") :
+                                    String(localized: "Activity"), systemImage: "bell")
+                        }
+                        .help("Replies, permission requests, and operation history")
+                        .accessibilityIdentifier("activity-button")
+                        Button("Disconnect", systemImage: "network.slash") {
+                            if model.configurationDirty {
+                                confirmingDiscard = true
+                            } else { Task { await model.disconnect() } }
+                        }.disabled(model.busy || model.configurationApplying)
+                    } else {
+                        Button("Connect", systemImage: "network") { showingConnection = true }
+                            .disabled(model.busy)
                     }
-                    .help("Replies, permission requests, and operation history")
-                    .accessibilityIdentifier("activity-button")
-                    Button("Disconnect", systemImage: "network.slash") {
-                        if model.configurationDirty {
-                            confirmingDiscard = true
-                        } else { Task { await model.disconnect() } }
-                    }.disabled(model.busy || model.configurationApplying)
-                } else {
-                    Button("Connect", systemImage: "network") { showingConnection = true }
-                        .disabled(model.busy)
                 }
             }
         }
         .onChange(of: model.newChatRequest) {
             guard !model.configurationApplying else { return }
-            selection = .inbox
+            navigate(.inbox)
             model.chats.newChat()
         }
         .onChange(of: model.setupRequired) {
@@ -167,7 +152,7 @@ struct ContentView: View {
                 model.error = String(localized: "Wait for settings activation to finish before opening this update.")
                 return
             }
-            selection = .inbox
+            navigate(.inbox)
             if let task = model.notificationTaskID {
                 Task {
                     do {
@@ -205,7 +190,9 @@ struct ContentView: View {
         }
         .onChange(of: model.health?.instanceID) {
             settingsIdentity = UUID()
-            settingsOpened = model.health != nil && selection == .configuration
+            settingsLocation = SettingsLocation()
+            openedDestinations = [selection ?? .inbox]
+            history = NavigationHistory(Visit(destination: selection ?? .inbox, settings: settingsLocation))
         }
         .confirmationDialog("Discard unsaved configuration changes and disconnect?", isPresented: $confirmingDiscard, titleVisibility: .visible) {
             Button("Discard and disconnect", role: .destructive) {
@@ -216,6 +203,34 @@ struct ContentView: View {
             Button("Keep editing", role: .cancel) {}
         }
         .disclosureGroupStyle(FullRowDisclosureStyle())
+    }
+
+    /// Browser-style controls share the same history for primary pages and settings subpages.
+    private var historyControls: some View {
+        HStack {
+            Button("Back", systemImage: "chevron.left") { moveInHistory(back: true) }
+                .keyboardShortcut("[", modifiers: .command)
+                .disabled(!history.canGoBack || model.configurationApplying)
+                .accessibilityIdentifier("navigation-back")
+            Button("Forward", systemImage: "chevron.right") { moveInHistory(back: false) }
+                .keyboardShortcut("]", modifiers: .command)
+                .disabled(!history.canGoForward || model.configurationApplying)
+                .accessibilityIdentifier("navigation-forward")
+        }
+    }
+
+    /// Saved-state notices do not claim to inspect live service configuration.
+    private var activationBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+            Text(model.activationState == .pending ? "Saved settings need applying" :
+                    "Settings activation needs checking").font(.callout.weight(.medium))
+            Spacer()
+            Button("Review & Apply") { model.activationReviewPresented = true }
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12).background(Theme.panel)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pending-settings-banner")
     }
 
     /// Connection, data, and support tools stay out of the way until needed.
@@ -245,15 +260,66 @@ struct ContentView: View {
         }
     }
 
-    /// Settings stay mounted, so navigation preserves drafts without a discard prompt.
+    /// Hidden panes cannot receive input or mark conversations read.
+    private var visitedPanes: some View {
+        ZStack {
+            ForEach(Destination.allCases.filter { openedDestinations.contains($0) }) { destination in
+                destinationView(destination)
+                    .opacity(selection == destination ? 1 : 0)
+                    .allowsHitTesting(selection == destination)
+                    .accessibilityHidden(selection != destination)
+                    .disabled(selection != destination)
+            }
+        }.id(settingsIdentity)
+    }
+
+    /// Visited panes stay mounted to retain selection, expanded sections, drafts, and viewport.
+    @ViewBuilder private func destinationView(_ destination: Destination) -> some View {
+        switch destination {
+        case .inbox:
+            InboxView(model: model, chat: model.chats, isVisible: selection == .inbox)
+        case .reminders:
+            InboxView(model: model, chat: model.reminderRuns, isReminders: true,
+                      isVisible: selection == .reminders) { reminder in
+                model.chats.newChat(about: reminder)
+                navigate(.inbox)
+            }
+        case .configuration:
+            ConfigurationView(model: model, location: $settingsLocation, navigate: navigateSettings)
+        case .services: ServicesView(model: model, isVisible: selection == .services)
+        case .data: DataManagementView(model: model)
+        }
+    }
+
+    /// New visits preserve the outgoing page's in-place state before recording history.
     private func navigate(_ destination: Destination?) {
         guard !model.configurationApplying else { return }
-        guard destination != selection else { return }
-        if destination == .configuration {
-            settingsOpened = true
-            model.configurationVisit = UUID()
-        }
-        selection = destination
+        guard let destination, destination != selection else { return }
+        history.update(Visit(destination: selection ?? .inbox, settings: settingsLocation))
+        history.visit(Visit(destination: destination, settings: settingsLocation))
+        activateVisit()
+    }
+
+    private func navigateSettings(_ page: SettingsPage, _ category: SettingsCategory) {
+        guard !model.configurationApplying else { return }
+        history.update(Visit(destination: selection ?? .inbox, settings: settingsLocation))
+        history.visit(Visit(destination: .configuration,
+                            settings: SettingsLocation(category: category, page: page)))
+        activateVisit()
+    }
+
+    private func moveInHistory(back: Bool) {
+        guard !model.configurationApplying else { return }
+        history.update(Visit(destination: selection ?? .inbox, settings: settingsLocation))
+        if back { history.back() } else { history.forward() }
+        activateVisit()
+    }
+
+    private func activateVisit() {
+        selection = history.current.destination
+        settingsLocation = history.current.settings
+        openedDestinations.insert(history.current.destination)
+        if selection == .configuration { model.configurationVisit = UUID() }
     }
 
     /// The first launch performs no network activity until the user explicitly connects.

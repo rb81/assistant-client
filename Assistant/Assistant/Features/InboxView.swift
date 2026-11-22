@@ -5,6 +5,7 @@ struct InboxView: View {
     let model: ClientModel
     let chat: ConversationModel
     var isReminders = false
+    var isVisible = true
     var askAboutRun: ((Conversation) -> Void)? = nil
     @State private var showingSchedule = false
     @State private var deletionPreview: JSONValue?
@@ -86,7 +87,8 @@ struct InboxView: View {
                 }
             }.frame(minWidth: 420)
         }
-        .task {
+        .task(id: isVisible) {
+            guard isVisible else { return }
             // Returning to Chats shows the list already in memory instead of reloading it straight away.
             if model.liveRevision == 0 && chat.listIsFresh && model.messages.isEmpty {
                 do { try await Task.sleep(for: ConversationModel.listRefresh) } catch { return }
@@ -97,9 +99,12 @@ struct InboxView: View {
                 do { try await Task.sleep(for: ConversationModel.listRefresh) } catch { return }
             }
         }
-        .onChange(of: model.liveRevision) { chat.refreshAfterEvent(model) }
-        .task(id: TranscriptTrigger(thread: chat.selectedThread, deliveries: assistantDeliveries, revision: 0)) {
-            guard chat.selectedThread != nil else { return }
+        .onChange(of: model.liveRevision) {
+            if isVisible { chat.refreshAfterEvent(model) }
+        }
+        .task(id: TranscriptTrigger(thread: isVisible ? chat.selectedThread : nil,
+                                   deliveries: isVisible ? assistantDeliveries : [], revision: 0)) {
+            guard isVisible, chat.selectedThread != nil else { return }
             // A cached transcript is shown as-is unless it is stale or a new reply has just arrived.
             var reuseCache = model.liveRevision == 0 && !chat.noteDeliveries(assistantDeliveries)
             while !Task.isCancelled {
@@ -290,8 +295,8 @@ struct InboxView: View {
             }
             .task(id: DeliveryRender(thread: chat.selectedThread, version: chat.renderedVersion,
                                      rendered: chat.messages.map(\.id),
-                                     active: scenePhase == .active)) {
-                if scenePhase == .active { chat.markRendered() }
+                                     active: scenePhase == .active && isVisible)) {
+                if scenePhase == .active && isVisible { chat.markRendered() }
             }
         }
     }

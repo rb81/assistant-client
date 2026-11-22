@@ -68,6 +68,7 @@ struct ConnectionSummary: View {
 /// A clear service inventory and deliberate lifecycle controls replace the technical status dump.
 struct ServicesView: View {
     let model: ClientModel
+    var isVisible = true
     @State private var pending: ReviewedMutation?
     @State private var error: String?
     @State private var busy = false
@@ -142,7 +143,8 @@ struct ServicesView: View {
             }
             .frame(maxWidth: 1050).padding(28).frame(maxWidth: .infinity)
         }
-        .disabled(busy).task {
+        .disabled(busy).task(id: isVisible) {
+            guard isVisible else { return }
             while !Task.isCancelled {
                 await load()
                 do { try await Task.sleep(for: .seconds(10)) } catch { return }

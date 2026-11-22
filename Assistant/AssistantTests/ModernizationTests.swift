@@ -445,6 +445,34 @@ final class ModernizationTests: XCTestCase {
         XCTAssertEqual(resources.count, 7, "Authentication failures must not be retried")
     }
 
+    /// Retaining hidden panes must not turn navigation into background reads or mark a chat read.
+    @MainActor
+    func testRetainedInactivePanesDoNotPollOrMarkRead() async throws {
+        let api = ChatAPI()
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                api: api, health: health)
+        try await model.chats.loadConversations(model)
+        let conversation = try XCTUnwrap(model.chats.conversations.first)
+        model.chats.select(conversation)
+        try await model.chats.refresh(model)
+        let reads = await api.resources
+        XCTAssertTrue(model.chats.isUnread(conversation))
+        let host = NSHostingView(rootView: ZStack {
+            InboxView(model: model, chat: model.chats, isVisible: false)
+            ServicesView(model: model, isVisible: false)
+        }.environment(\.scenePhase, .active))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer { window.close() }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(150))
+        let afterMount = await api.resources
+        XCTAssertEqual(afterMount, reads)
+        XCTAssertTrue(model.chats.isUnread(conversation))
+    }
+
     @MainActor
     func testServerEchoBeforeReceiptDoesNotDuplicateOptimisticMessage() async throws {
         let api = ChatAPI()
@@ -981,7 +1009,9 @@ final class ModernizationTests: XCTestCase {
         XCTAssertEqual(overview.sections.map(\.id), ["task", "research", "speech"])
         XCTAssertFalse(try XCTUnwrap(overview.sections.last?.enabled))
         XCTAssertEqual(overview.matchingSections("speech").map(\.id), ["speech"])
-        XCTAssertEqual(overview.matchingSections("temperature").first?.settings.map(\.id), ["AGENT_LLM_TEMPERATURE"])
+        XCTAssertTrue(overview.matchingSections("temperature").isEmpty)
+        XCTAssertEqual(overview.matchingSections("").first?.selections.map(\.id), ["AGENT_LLM_MODEL"])
+        XCTAssertEqual(overview.sections.first?.relatedSettings?.map(\.group), ["models", "catalog:llm"])
         XCTAssertEqual(overview.sections[1].summary.first?.valueSource, .inherited)
         let secret = try XCTUnwrap(overview.sections[0].settings.first { $0.field.secret })
         XCTAssertEqual(secret.field.value, "")
@@ -992,6 +1022,81 @@ final class ModernizationTests: XCTestCase {
         } catch {
             guard case .operationFailed = error as? ClientError else { return XCTFail("Unexpected error: \(error)") }
         }
+    }
+
+    /// Back and forward preserve subpage/search state, and a new visit abandons the forward branch.
+    func testNavigationHistoryRestoresSettingsVisitsAndBranches() {
+        let initial = SettingsLocation()
+        let models = SettingsLocation(category: .models, page: .modelOverview, search: "speech")
+        let tuning = SettingsLocation(category: .advanced, page: .group("catalog:llm"))
+        var history = NavigationHistory(initial)
+        history.visit(models)
+        history.visit(models)
+        history.visit(tuning)
+        history.back()
+        XCTAssertEqual(history.current, models)
+        history.back()
+        XCTAssertEqual(history.current, initial)
+        XCTAssertFalse(history.canGoBack)
+        history.forward()
+        XCTAssertEqual(history.current, models)
+        history.update(SettingsLocation(category: .models, page: .modelOverview, search: "research"))
+        history.visit(tuning)
+        XCTAssertFalse(history.canGoForward)
+        history.back()
+        XCTAssertEqual(history.current.search, "research")
+    }
+
+    /// Shared offset storage separates the same group in different categories and searches.
+    @MainActor
+    func testScrollMemoryPreservesExactOffsetsForEachSettingsLocation() {
+        let memory = ScrollMemory()
+        let models = SettingsLocation(category: .models, page: .group("models"))
+        let advanced = SettingsLocation(category: .advanced, page: .group("models"))
+        let filtered = SettingsLocation(category: .models, page: .group("models"), search: "fallback")
+        memory.remember(CGPoint(x: 0, y: 437.5), for: models)
+        memory.remember(CGPoint(x: 0, y: 918.25), for: advanced)
+        XCTAssertEqual(memory.offset(for: models).y, 437.5)
+        XCTAssertEqual(memory.offset(for: advanced).y, 918.25)
+        XCTAssertEqual(memory.offset(for: filtered), .zero)
+    }
+
+    /// Recreating a native scroll view restores its viewport after visiting a different page.
+    @MainActor
+    func testRememberedScrollRestoresNativeViewport() async throws {
+        let memory = ScrollMemory()
+        func page(_ key: String) -> some View {
+            ScrollView {
+                VStack { Color.clear.frame(height: 1800) }
+            }
+            .rememberingScroll(key, in: memory)
+            .id(key)
+        }
+        let host = NSHostingView(rootView: page("models"))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 500, height: 300),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        func scrollView(in view: NSView) -> NSScrollView? {
+            if let scroll = view as? NSScrollView { return scroll }
+            return view.subviews.lazy.compactMap { scrollView(in: $0) }.first
+        }
+        try await Task.sleep(for: .milliseconds(150))
+        let original = try XCTUnwrap(scrollView(in: host))
+        original.contentView.scroll(to: CGPoint(x: 0, y: 437.5))
+        original.reflectScrolledClipView(original.contentView)
+        try await Task.sleep(for: .milliseconds(150))
+        let expected = original.contentView.bounds.origin.y
+        XCTAssertGreaterThan(expected, 400)
+        host.rootView = page("safety")
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(memory.offset(for: "models").y, expected, accuracy: 1)
+        host.rootView = page("models")
+        try await Task.sleep(for: .milliseconds(150))
+        let restored = try XCTUnwrap(scrollView(in: host))
+        XCTAssertEqual(restored.contentView.bounds.origin.y, expected, accuracy: 1)
     }
 
     /// Credential read-back and malformed field identity must never render as a valid overview.
