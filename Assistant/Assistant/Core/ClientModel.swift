@@ -84,7 +84,10 @@ final class ClientModel {
     }
     /// Applying must wait for known configuration writes and service actions to finish.
     var pendingActivationAction: Bool {
-        operations.contains { ["service.lifecycle", "configuration.save"].contains($0.action) && $0.pending }
+        operations.contains {
+            $0.pending && ($0.action == "configuration.save" || $0.action.hasPrefix("configuration.save.") ||
+                           $0.action == "service.lifecycle" || $0.action.hasPrefix("service."))
+        }
     }
     private var pollTask: Task<Void, Never>?
     private var eventTask: Task<Void, Never>?

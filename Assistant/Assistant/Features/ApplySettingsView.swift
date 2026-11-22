@@ -112,7 +112,8 @@ struct ApplySettingsView: View {
         } catch {
             self.summary = nil
             model.recordActivation(.unknown)
-            self.error = error.presentableMessage ?? self.error
+            self.error = error.presentableMessage ??
+                String(localized: "The apply outcome is unconfirmed. Check Activity, then reload saved changes.")
         }
     }
 }

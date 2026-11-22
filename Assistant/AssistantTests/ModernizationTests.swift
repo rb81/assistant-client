@@ -12,6 +12,25 @@ final class ModernizationTests: XCTestCase {
                        capabilities: ["configuration.read"], readOnly: false)
     }
 
+    @MainActor
+    func testPendingActivationActionsUseServerAuditNames() throws {
+        let model = ClientModel(defaults: try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString)),
+                                health: health)
+        func operation(_ action: String, _ state: String) -> ManagementOperation {
+            ManagementOperation(id: "operation", action: action, state: state,
+                                progress: "", error: nil, result: nil)
+        }
+        for action in ["configuration.save.AGENT_LLM_MODEL", "service.apply.application",
+                       "service.restart.management", "configuration.save", "service.lifecycle"] {
+            model.operations = [operation(action, "running")]
+            XCTAssertTrue(model.pendingActivationAction, action)
+            model.operations = [operation(action, "succeeded")]
+            XCTAssertFalse(model.pendingActivationAction, action)
+        }
+        model.operations = [operation("record.delete.1", "running")]
+        XCTAssertFalse(model.pendingActivationAction)
+    }
+
     func testWebAccessSettingsUseServerNavigationChoicesAndSecretMetadata() throws {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
@@ -836,6 +855,39 @@ final class ModernizationTests: XCTestCase {
     }
 
     @MainActor
+    func testProviderCatalogCachesFullAndZDRListsSeparately() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let loader = CatalogFixture()
+        let catalog = OpenRouterCatalog(defaults: defaults, loader: loader)
+        await catalog.refreshProviders(zdr: false)
+        await catalog.refreshProviders(zdr: true)
+        XCTAssertEqual(catalog.providers(zdr: false).map(\.id), ["example", "other"])
+        XCTAssertEqual(catalog.providers(zdr: true).map(\.id), ["example"])
+        let restored = OpenRouterCatalog(defaults: defaults, loader: loader)
+        XCTAssertEqual(restored.providers(zdr: true).map(\.id), ["example"])
+        XCTAssertEqual(restored.providers(zdr: false).map(\.id), ["example", "other"])
+        await loader.fail()
+        await restored.refreshProviders(zdr: true, force: true)
+        XCTAssertNotNil(restored.providerErrors[true])
+        XCTAssertEqual(restored.providers(zdr: true).map(\.id), ["example"])
+    }
+
+    func testProviderEndpointsDecodeAndDeduplicateRoutingSlugs() throws {
+        let endpoints = """
+        [{"provider_name":"DeepInfra","tag":"deepinfra/fp4"},
+         {"provider_name":"DeepInfra","tag":"deepinfra/turbo"},
+         {"provider_name":"Azure","tag":"azure"}]
+        """
+        let full = try PublicOpenRouterCatalog.decodeProviderEndpoints(
+            Data("{\"data\":{\"endpoints\":\(endpoints)}}".utf8), zdr: false)
+        let zdr = try PublicOpenRouterCatalog.decodeProviderEndpoints(
+            Data("{\"data\":\(endpoints)}".utf8), zdr: true)
+        XCTAssertEqual(try PublicOpenRouterCatalog.providerChoices(full).map(\.id), ["azure", "deepinfra"])
+        XCTAssertEqual(try PublicOpenRouterCatalog.providerChoices(zdr).map(\.id), ["azure", "deepinfra"])
+        XCTAssertThrowsError(try PublicOpenRouterCatalog.decodeProviderEndpoints(Data("{}".utf8), zdr: true))
+    }
+
+    @MainActor
     func testConfiguredAssistantNameRefreshesAndClearingItRestoresInstallationName() async throws {
         let api = ChatAPI()
         let health = InstanceHealth(apiVersion: 2, instanceID: "names", name: "Assistant",
@@ -960,6 +1012,11 @@ final class ModernizationTests: XCTestCase {
 
 /// Capability fixtures exercise discovery without contacting OpenRouter.
 private actor CatalogFixture: OpenRouterCatalogLoading {
+    func providers(zdr: Bool) async throws -> [OpenRouterProvider] {
+        if failing { throw URLError(.notConnectedToInternet) }
+        return [OpenRouterProvider(id: "example", name: "Example")] +
+            (zdr ? [] : [OpenRouterProvider(id: "other", name: "Other")])
+    }
     var policies: [Bool] = []
     private var failing = false
     func fail() { failing = true }

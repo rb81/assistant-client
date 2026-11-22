@@ -1,5 +1,84 @@
 import SwiftUI
 
+/// Provider choices come from public endpoint metadata and retain unavailable saved selections.
+struct ProviderSelectionView: View {
+    let catalog: OpenRouterCatalog
+    let zdr: Bool
+    @Binding var value: String
+    @State private var showing = false
+    @State private var search = ""
+
+    private var selected: [String] {
+        value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Button(value.isEmpty ? String(localized: "No provider preference") : value) {
+                    showing.toggle()
+                }
+                .accessibilityIdentifier("openrouter-provider-picker")
+                .popover(isPresented: $showing) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(zdr ? "ZDR-compatible providers" : "OpenRouter providers").font(.headline)
+                        TextField("Search providers", text: $search)
+                        Button("No provider preference") { value = ""; showing = false }
+                        ScrollView {
+                            LazyVStack(alignment: .leading) {
+                                ForEach(catalog.providers(zdr: zdr).filter {
+                                    search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) ||
+                                        $0.id.localizedCaseInsensitiveContains(search)
+                                }) { provider in
+                                    Button {
+                                        value = (selected.contains(provider.id) ?
+                                            selected.filter { $0 != provider.id } : selected + [provider.id])
+                                            .joined(separator: ",")
+                                    } label: {
+                                        HStack {
+                                            Text(provider.name)
+                                            Text(provider.id).foregroundStyle(Theme.secondary)
+                                            Spacer()
+                                            if selected.contains(provider.id) { Image(systemName: "checkmark") }
+                                        }.padding(6).contentShape(Rectangle())
+                                    }
+                                    .accessibilityIdentifier("openrouter-provider-\(provider.id)")
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }.frame(height: 280)
+                        Button("Refresh providers", systemImage: "arrow.clockwise") {
+                            Task { await catalog.refreshProviders(zdr: zdr, force: true) }
+                        }.disabled(catalog.providersLoading.contains(zdr))
+                        Text("Public availability can differ from your account and may change.")
+                            .font(.caption).foregroundStyle(Theme.secondary)
+                    }.padding(16).frame(width: 440)
+                }
+                StableProgress(active: catalog.providersLoading.contains(zdr))
+            }
+            if let error = catalog.providerErrors[zdr] {
+                Label(error, systemImage: "exclamationmark.circle").font(.caption).foregroundStyle(.orange)
+            }
+            if catalog.providersFetchedAt(zdr: zdr) != nil {
+                let unavailable = selected.filter { id in
+                    !catalog.providers(zdr: zdr).contains { id == $0.id || id.hasPrefix($0.id + "/") }
+                }
+                if !unavailable.isEmpty {
+                    Label("Some selected providers are unavailable under the current catalog policy. Requests may fail; remove them or change the policy.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                    ForEach(unavailable, id: \.self) { id in
+                        Button("Remove \(id)") {
+                            value = selected.filter { $0 != id }.joined(separator: ",")
+                        }.font(.caption)
+                    }
+                }
+            }
+        }
+        .task(id: zdr) { await catalog.refreshProviders(zdr: zdr) }
+    }
+}
+
 /// Searchable, capability-filtered catalog choices preserve an unavailable saved ID without inventing substitutes.
 struct ModelSelectionView: View {
     let catalog: OpenRouterCatalog

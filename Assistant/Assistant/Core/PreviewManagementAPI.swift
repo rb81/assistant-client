@@ -253,6 +253,8 @@ actor PreviewManagementAPI: ManagementAPI {
                             help: "The HTTPS endpoint used by task models."),
                     setting("models", "AGENT_LLM_ZDR_ONLY", "Require Zero Data Retention on OpenRouter", "false",
                             boolean: true, help: "Restrict OpenRouter requests to Zero Data Retention endpoints."),
+                    setting("models", "AGENT_LLM_ALLOWED_PROVIDERS", "Allowed OpenRouter providers", "",
+                            help: "Leave empty for no preference."),
                     .object(["group": .string("models"), "key": .string("AGENT_LLM_OPENROUTER_API_KEY"),
                              "label": .string("OpenRouter API key"), "value": .string(""),
                              "secret": .bool(true), "boolean": .bool(false), "editable": .bool(true)]),

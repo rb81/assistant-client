@@ -48,10 +48,103 @@ enum ModelPurpose: Sendable {
 /// Injectable catalog discovery never receives an installation token or a provider API key.
 protocol OpenRouterCatalogLoading: Sendable {
     func models(zdr: Bool) async throws -> [OpenRouterModel]
+    func providers(zdr: Bool) async throws -> [OpenRouterProvider]
+}
+
+/// Provider slugs identify hosting providers, not model authors.
+struct OpenRouterProvider: Codable, Identifiable, Sendable {
+    let id: String
+    let name: String
 }
 
 /// Fixed-origin HTTPS discovery with bounded responses, pagination, and no credential forwarding.
 struct PublicOpenRouterCatalog: OpenRouterCatalogLoading {
+    struct ProviderEndpoint: Decodable, Sendable {
+        let providerName: String
+        let tag: String
+    }
+
+    static func decodeProviderEndpoints(_ data: Data, zdr: Bool) throws -> [ProviderEndpoint] {
+        struct ZDREnvelope: Decodable { let data: [ProviderEndpoint] }
+        struct ModelEndpoints: Decodable {
+            struct Model: Decodable { let endpoints: [ProviderEndpoint] }
+            let data: Model
+        }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try zdr ? decoder.decode(ZDREnvelope.self, from: data).data :
+            decoder.decode(ModelEndpoints.self, from: data).data.endpoints
+    }
+
+    static func providerChoices(_ endpoints: [ProviderEndpoint]) throws -> [OpenRouterProvider] {
+        var found: [String: String] = [:]
+        for endpoint in endpoints {
+            guard let slug = endpoint.tag.split(separator: "/").first, !slug.isEmpty,
+                  !endpoint.providerName.isEmpty else { throw ClientError.malformedResponse }
+            found[String(slug)] = endpoint.providerName
+        }
+        return found.map { OpenRouterProvider(id: $0.key, name: $0.value) }
+            .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    private func providerData(_ path: String, session: URLSession) async throws -> Data {
+        guard let url = URL(string: "https://openrouter.ai/api/v1" + path) else {
+            throw ClientError.invalidResource
+        }
+        let (bytes, response) = try await session.bytes(from: url)
+        guard let response = response as? HTTPURLResponse else { throw ClientError.malformedResponse }
+        guard response.statusCode == 200 else { throw ClientError.http(response.statusCode) }
+        let limit = 16 * 1024 * 1024
+        guard response.expectedContentLength <= limit else { throw ClientError.oversizedResponse }
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < limit else { throw ClientError.oversizedResponse }
+            data.append(byte)
+        }
+        return data
+    }
+
+    func providers(zdr: Bool) async throws -> [OpenRouterProvider] {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 60
+        configuration.httpCookieStorage = nil
+        let session = URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        let endpoints: [ProviderEndpoint]
+        if zdr {
+            endpoints = try Self.decodeProviderEndpoints(await providerData("/endpoints/zdr", session: session), zdr: true)
+        } else {
+            let modelIDs = try await models(zdr: false).map(\.id)
+            endpoints = try await withThrowingTaskGroup(of: [ProviderEndpoint].self) { group in
+                var iterator = modelIDs.makeIterator()
+                func addNext() throws {
+                    guard let id = iterator.next() else { return }
+                    let parts = id.split(separator: "/", omittingEmptySubsequences: false)
+                    guard parts.count == 2, parts.allSatisfy({ !$0.isEmpty }) else { throw ClientError.malformedResponse }
+                    var allowed = CharacterSet.urlPathAllowed
+                    allowed.remove(charactersIn: "/?#%")
+                    guard let author = String(parts[0]).addingPercentEncoding(withAllowedCharacters: allowed),
+                          let slug = String(parts[1]).addingPercentEncoding(withAllowedCharacters: allowed) else {
+                        throw ClientError.invalidResource
+                    }
+                    group.addTask {
+                        let data = try await providerData("/models/\(author)/\(slug)/endpoints", session: session)
+                        return try Self.decodeProviderEndpoints(data, zdr: false)
+                    }
+                }
+                for _ in 0..<8 { try addNext() }
+                var all: [ProviderEndpoint] = []
+                while let batch = try await group.next() {
+                    all.append(contentsOf: batch)
+                    try addNext()
+                }
+                return all
+            }
+        }
+        return try Self.providerChoices(endpoints)
+    }
+
     func models(zdr: Bool) async throws -> [OpenRouterModel] {
         struct Envelope: Decodable { let data: [OpenRouterModel] }
         let configuration = URLSessionConfiguration.ephemeral
@@ -101,11 +194,19 @@ final class OpenRouterCatalog {
         let fetchedAt: Date
         let models: [OpenRouterModel]
     }
+    private struct ProviderSnapshot: Codable {
+        let fetchedAt: Date
+        let providers: [OpenRouterProvider]
+    }
     static let refreshInterval: TimeInterval = 7 * 24 * 60 * 60
     private let defaults: UserDefaults
     private let loader: any OpenRouterCatalogLoading
     private var snapshots: [Bool: Snapshot] = [:]
     private var requests: [Bool: Task<Void, Never>] = [:]
+    private var providerSnapshots: [Bool: ProviderSnapshot] = [:]
+    private var providerRequests: [Bool: Task<Void, Never>] = [:]
+    private(set) var providersLoading: Set<Bool> = []
+    private(set) var providerErrors: [Bool: String] = [:]
     private(set) var loading: Set<Bool> = []
     private(set) var errors: [Bool: String] = [:]
     var automaticallyRefresh: Bool {
@@ -117,6 +218,10 @@ final class OpenRouterCatalog {
         self.loader = loader
         automaticallyRefresh = defaults.object(forKey: "assistant.models.autoRefresh") as? Bool ?? true
         for zdr in [false, true] {
+            if let data = defaults.data(forKey: Self.providerKey(zdr)) {
+                do { providerSnapshots[zdr] = try JSONDecoder().decode(ProviderSnapshot.self, from: data) }
+                catch { providerErrors[zdr] = String(localized: "The saved provider list could not be read. Refresh it to try again.") }
+            }
             guard let data = defaults.data(forKey: Self.key(zdr)) else { continue }
             do { snapshots[zdr] = try JSONDecoder().decode(Snapshot.self, from: data) }
             catch { errors[zdr] = String(localized: "The saved model list could not be read. Refresh it to try again.") }
@@ -124,6 +229,32 @@ final class OpenRouterCatalog {
     }
 
     private static func key(_ zdr: Bool) -> String { "assistant.models.\(zdr ? "zdr" : "full")" }
+    private static func providerKey(_ zdr: Bool) -> String { "assistant.providers.\(zdr ? "zdr" : "full")" }
+
+    func providers(zdr: Bool) -> [OpenRouterProvider] { providerSnapshots[zdr]?.providers ?? [] }
+    func providersFetchedAt(zdr: Bool) -> Date? { providerSnapshots[zdr]?.fetchedAt }
+
+    func refreshProviders(zdr: Bool, force: Bool = false, now: Date = Date()) async {
+        if let request = providerRequests[zdr] { await request.value; return }
+        let due = providerSnapshots[zdr].map { now.timeIntervalSince($0.fetchedAt) >= Self.refreshInterval } ?? true
+        guard force || (automaticallyRefresh && due) else { return }
+        let request = Task {
+            providersLoading.insert(zdr)
+            defer { providersLoading.remove(zdr); providerRequests[zdr] = nil }
+            do {
+                let providers = try await loader.providers(zdr: zdr)
+                try Task.checkCancellation()
+                let snapshot = ProviderSnapshot(fetchedAt: now, providers: providers)
+                defaults.set(try JSONEncoder().encode(snapshot), forKey: Self.providerKey(zdr))
+                providerSnapshots[zdr] = snapshot
+                providerErrors[zdr] = nil
+            } catch {
+                if let message = error.presentableMessage { providerErrors[zdr] = message }
+            }
+        }
+        providerRequests[zdr] = request
+        await request.value
+    }
 
     func models(zdr: Bool, purpose: ModelPurpose) -> [OpenRouterModel] {
         (snapshots[zdr]?.models ?? []).filter { $0.supports(purpose) }
@@ -165,6 +296,9 @@ final class OpenRouterCatalog {
 #if DEBUG
 /// Deterministic UI discovery never makes external requests.
 struct PreviewCatalogLoader: OpenRouterCatalogLoading {
+    func providers(zdr: Bool) async throws -> [OpenRouterProvider] {
+        [OpenRouterProvider(id: "example", name: "Example provider")]
+    }
     func models(zdr: Bool) async throws -> [OpenRouterModel] {
         [OpenRouterModel(id: "example/model", name: "Example model",
                          architecture: .init(inputModalities: ["text"], outputModalities: ["text"]),

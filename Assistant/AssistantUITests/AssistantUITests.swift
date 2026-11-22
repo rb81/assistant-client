@@ -49,6 +49,29 @@ final class AssistantUITests: XCTestCase {
         verifySettingsPanes(dark: true)
     }
 
+    /// Provider choices use the public fixture catalog in both appearances.
+    @MainActor
+    func testOpenRouterProviderPicker() {
+        for dark in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-fixture"] + (dark ? ["--ui-dark"] : [])
+            app.launch()
+            app.buttons["nav-configuration"].click()
+            let models = app.buttons["settings-section-models-models"]
+            XCTAssertTrue(models.waitForExistence(timeout: 10))
+            models.click()
+            let picker = app.buttons["openrouter-provider-picker"]
+            XCTAssertTrue(picker.waitForExistence(timeout: 10))
+            picker.click()
+            let provider = app.buttons["openrouter-provider-example"]
+            XCTAssertTrue(provider.waitForExistence(timeout: 10))
+            provider.click()
+            capture(app, name: dark ? "Provider picker dark" : "Provider picker light")
+            XCTAssertTrue(picker.label.contains("example"))
+            app.terminate()
+        }
+    }
+
     /// The retained Settings pane must still review a draft after returning from Chats.
     @MainActor
     func testSettingsFooterReviewAfterReturningFromChats() {

@@ -18,7 +18,7 @@ connection without keeping a terminal open.
 | **Data** | Use the full-width browser to preview images with zoom, text/code, Markdown, PDF, Office documents and fonts, or play supported audio/video. Download and manage workspace files. |
 | **Activity** | Use the toolbar bell for permission requests, real reply/update notices, and operation history. Unconfirmed actions are distinct from approval requests and are never automatically repeated. |
 | **Settings** | Restore the complete cached menu without progressively appearing sections. Keep ordinary setup beside each feature's enable switch, with power-user tuning under Advanced. Retain drafts while navigating, edit instructions in a bounded Markdown editor, and review before saving. A persistent **Review & Apply** banner lists saved changes awaiting activation. Skills prefetch and show 20 per page; adjustable pane widths are remembered. |
-| **OpenRouter models** | Search cached, capability-filtered model lists. Require ZDR in server settings; manage weekly/manual catalog refresh in local App settings. |
+| **OpenRouter models** | Search cached, capability-filtered models and restrict hosting providers. Require ZDR in server settings; manage weekly/manual catalog refresh locally. |
 | **Live updates** | Receive resumable updates with polling fallback and optional macOS notifications while the app is open. |
 
 ## Download

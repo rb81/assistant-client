@@ -196,6 +196,10 @@ The weekly-refresh switch and manual refresh are local preferences, not server
 configuration. No installation or provider credentials enter discovery. Public
 eligibility cannot guarantee account-specific access. The server independently
 enforces `provider.zdr=true` on OpenRouter requests when global ZDR is enabled.
+Provider discovery uses the public ZDR endpoints list or, for the unrestricted
+catalog, each model's public endpoint list. It requires no credentials, and
+the latter can require hundreds of requests. Unavailable saved choices remain
+visible; server-side `provider.only` enforcement does not depend on the cache.
 
 Remote Markdown uses Textual's full-document parser and native structured-text
 layout, including tables and horizontal rules. Image URL attributes are removed

@@ -70,6 +70,8 @@ struct SettingRow: View {
                       systemImage: "key")
                     .font(.caption).foregroundStyle(Theme.secondary)
             }
+        } else if let modelCatalog, field.key == "AGENT_LLM_ALLOWED_PROVIDERS" {
+            ProviderSelectionView(catalog: modelCatalog, zdr: zdrOnly, value: $value)
         } else if let modelCatalog, let modelPurpose {
             ModelSelectionView(catalog: modelCatalog, purpose: modelPurpose, zdr: zdrOnly,
                                multiple: field.key == "AGENT_FUSION_ANALYSIS_MODELS", value: $value)

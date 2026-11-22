@@ -1313,6 +1313,9 @@
     "Tell Assistant what to keep in mind across all your conversations." : {
 
     },
+    "The apply outcome is unconfirmed. Check Activity, then reload saved changes." : {
+
+    },
     "The client selected an invalid API resource." : {
 
     },
@@ -1572,6 +1575,33 @@
 
     },
     "structured settings" : {
+
+    },
+    "No provider preference" : {
+
+    },
+    "OpenRouter providers" : {
+
+    },
+    "Public availability can differ from your account and may change." : {
+
+    },
+    "Refresh providers" : {
+
+    },
+    "Remove %@" : {
+
+    },
+    "Search providers" : {
+
+    },
+    "Some selected providers are unavailable under the current catalog policy. Requests may fail; remove them or change the policy." : {
+
+    },
+    "The saved provider list could not be read. Refresh it to try again." : {
+
+    },
+    "ZDR-compatible providers" : {
 
     }
   },
