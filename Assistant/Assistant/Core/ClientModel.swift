@@ -290,6 +290,17 @@ final class ClientModel {
         return catalog
     }
 
+    /// All model roles load together; older servers must explain their missing capability.
+    func modelSettingsOverview(revision: String) async throws -> ModelSettingsOverview {
+        guard health?.capabilities.contains("configuration.model-settings") == true else {
+            throw ClientError.serverOutdated(String(localized: "model settings overview"))
+        }
+        let result = try await cachedRead("configuration/model-settings")
+        let overview = try Wire.decoder().decode(ModelSettingsOverview.self, from: JSONEncoder().encode(result))
+        try overview.validate(revision: revision)
+        return overview
+    }
+
     func prefetchSettingsMenu() async {
         guard health?.capabilities.contains("configuration.structured") == true else { return }
         do { _ = try await configurationCatalog() }

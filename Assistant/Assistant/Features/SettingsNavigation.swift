@@ -6,6 +6,7 @@ enum SettingsPage: Hashable {
     case instructions
     case skills
     case app
+    case modelOverview
 }
 
 /// Stable product destinations replace catalog-level navigation.

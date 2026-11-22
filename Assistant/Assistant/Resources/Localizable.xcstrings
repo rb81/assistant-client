@@ -41,6 +41,16 @@
         }
       }
     },
+    "%@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        }
+      }
+    },
     "%lld failed" : {
 
     },
@@ -94,6 +104,9 @@
     "Activation outcome needs checking. Inspect operation history before retrying." : {
 
     },
+    "Activation tracking is unavailable for earlier saves." : {
+
+    },
     "Activity" : {
 
     },
@@ -125,6 +138,9 @@
 
     },
     "All channels" : {
+
+    },
+    "All settings" : {
 
     },
     "Allow once" : {
@@ -403,6 +419,9 @@
     "Destination" : {
 
     },
+    "Disabled" : {
+
+    },
     "Discard and disconnect" : {
 
     },
@@ -448,6 +467,12 @@
     "Earlier tool calls in this conversation are not shown." : {
 
     },
+    "Edit" : {
+
+    },
+    "Edit %@" : {
+
+    },
     "Edit preferences" : {
 
     },
@@ -455,6 +480,9 @@
 
     },
     "Email" : {
+
+    },
+    "Enabled" : {
 
     },
     "Enter a valid SSH alias or user@host and port." : {
@@ -515,6 +543,9 @@
 
     },
     "Incomplete setup" : {
+
+    },
+    "Inherited from %@" : {
 
     },
     "Inspect shipped workflows or publish custom guidance and preference overlays." : {
@@ -586,6 +617,9 @@
     "Loading details…" : {
 
     },
+    "Loading model settings…" : {
+
+    },
     "Loading models…" : {
 
     },
@@ -593,6 +627,9 @@
 
     },
     "Loading verified preview…" : {
+
+    },
+    "Local draft changes are not shown here." : {
 
     },
     "Locked" : {
@@ -625,6 +662,15 @@
     "Model lists are cached on this Mac. Automatic refresh checks once a week while the app is running; manual refresh works even when it’s turned off. This does not change server settings." : {
 
     },
+    "Model settings" : {
+
+    },
+    "Model settings overview" : {
+
+    },
+    "Model settings unavailable" : {
+
+    },
     "Models & Voice" : {
 
     },
@@ -635,6 +681,9 @@
 
     },
     "Needs Attention" : {
+
+    },
+    "Needs applying" : {
 
     },
     "Needs attention. View logs for details." : {
@@ -694,10 +743,16 @@
     "No messages in this conversation yet." : {
 
     },
+    "No model settings match this search." : {
+
+    },
     "No operations yet" : {
 
     },
     "No preferences set." : {
+
+    },
+    "No provider preference" : {
 
     },
     "No receipt from the server" : {
@@ -722,6 +777,9 @@
 
     },
     "No settings match “%@”." : {
+
+    },
+    "No tracked saved changes are awaiting activation." : {
 
     },
     "Not checked" : {
@@ -770,6 +828,9 @@
 
     },
     "OpenRouter models" : {
+
+    },
+    "OpenRouter providers" : {
 
     },
     "Operation %@ ended as %@. Inspect current state before retrying." : {
@@ -839,6 +900,15 @@
     "Private alerts while Assistant is running. Message bodies are never included. In-app updates remain available without permission." : {
 
     },
+    "Provider / service: %@" : {
+
+    },
+    "Provider default" : {
+
+    },
+    "Public availability can differ from your account and may change." : {
+
+    },
     "Publish preferences" : {
 
     },
@@ -878,6 +948,9 @@
     "Refresh models" : {
 
     },
+    "Refresh providers" : {
+
+    },
     "Refresh to load the model list." : {
 
     },
@@ -897,6 +970,9 @@
 
     },
     "Removal pending" : {
+
+    },
+    "Remove %@" : {
 
     },
     "Remove %@ from the active skill catalog?" : {
@@ -1064,6 +1140,9 @@
     "Saved and active" : {
 
     },
+    "Saved changes are awaiting activation. Use Review & Apply when ready." : {
+
+    },
     "Saved connection" : {
 
     },
@@ -1089,6 +1168,9 @@
 
     },
     "Saved settings need applying. Review and apply when you are ready." : {
+
+    },
+    "Saved settings only. Running models and provider availability are not verified." : {
 
     },
     "Saved values awaiting activation" : {
@@ -1122,6 +1204,9 @@
 
     },
     "Search models" : {
+
+    },
+    "Search providers" : {
 
     },
     "Search reminder runs" : {
@@ -1244,6 +1329,9 @@
     "Some deliveries were not acknowledged. They will be offered again." : {
 
     },
+    "Some selected providers are unavailable under the current catalog policy. Requests may fail; remove them or change the policy." : {
+
+    },
     "Something needs your attention." : {
 
     },
@@ -1355,6 +1443,9 @@
     "The saved model list could not be read. Refresh it to try again." : {
 
     },
+    "The saved provider list could not be read. Refresh it to try again." : {
+
+    },
     "The send outcome is unconfirmed. Your draft is preserved. Check Activity > Operation History and the conversation before sending it again." : {
 
     },
@@ -1403,6 +1494,9 @@
     "This changes server data or may interrupt active work. An interrupted operation can have partial effects. Inspect its outcome before trying again." : {
 
     },
+    "This discards only edits on this Mac. Settings already saved on the server are kept." : {
+
+    },
     "This file exceeds the %@ limit for this view." : {
 
     },
@@ -1424,6 +1518,9 @@
     "This is not a permission request. Check the server’s receipts before trying the action again." : {
 
     },
+    "This model setting’s editor is unavailable. Reload settings." : {
+
+    },
     "This profile reached a different installation. Verify the server before creating a new profile." : {
 
     },
@@ -1434,9 +1531,6 @@
 
     },
     "This review includes decisions that require a newer client." : {
-
-    },
-    "This discards only edits on this Mac. Settings already saved on the server are kept." : {
 
     },
     "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready." : {
@@ -1547,6 +1641,9 @@
     "ZDR-compatible models" : {
 
     },
+    "ZDR-compatible providers" : {
+
+    },
     "Zero Data Retention endpoints only" : {
 
     },
@@ -1565,6 +1662,9 @@
     "macOS could not decode this image. It may be damaged or unsupported." : {
 
     },
+    "model settings overview" : {
+
+    },
     "permission requests" : {
 
     },
@@ -1575,33 +1675,6 @@
 
     },
     "structured settings" : {
-
-    },
-    "No provider preference" : {
-
-    },
-    "OpenRouter providers" : {
-
-    },
-    "Public availability can differ from your account and may change." : {
-
-    },
-    "Refresh providers" : {
-
-    },
-    "Remove %@" : {
-
-    },
-    "Search providers" : {
-
-    },
-    "Some selected providers are unavailable under the current catalog policy. Requests may fail; remove them or change the policy." : {
-
-    },
-    "The saved provider list could not be read. Refresh it to try again." : {
-
-    },
-    "ZDR-compatible providers" : {
 
     }
   },

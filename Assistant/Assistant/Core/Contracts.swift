@@ -278,6 +278,101 @@ struct FullConfiguration: Decodable, Sendable {
     }
 }
 
+/// Display provenance is distinct from whether a saved setting has been activated.
+enum ModelSettingSource: String, Decodable, Sendable {
+    case configured, inherited, providerDefault = "provider_default", credentialStatus = "credential_status", unset
+}
+
+/// Read-only presentation wraps the same field contract used by existing editors.
+struct ModelOverviewField: Decodable, Identifiable, Sendable {
+    let field: SettingField
+    let displayValue: String
+    let valueSource: ModelSettingSource
+    let inheritedFrom: String?
+    let pendingActivation: Bool
+    var id: String { field.key }
+
+    private enum CodingKeys: String, CodingKey {
+        case displayValue, valueSource, inheritedFrom, pendingActivation
+    }
+
+    /// Decode the flattened field contract and reject accidental credential read-back.
+    init(from decoder: Decoder) throws {
+        field = try SettingField(from: decoder)
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        displayValue = try container.decode(String.self, forKey: .displayValue)
+        valueSource = try container.decode(ModelSettingSource.self, forKey: .valueSource)
+        inheritedFrom = try container.decodeIfPresent(String.self, forKey: .inheritedFrom)
+        pendingActivation = try container.decode(Bool.self, forKey: .pendingActivation)
+        if field.secret && (!field.value.isEmpty || valueSource != .credentialStatus ||
+                            !["Configured", "Not configured"].contains(displayValue)) {
+            throw ClientError.malformedResponse
+        }
+    }
+}
+
+/// Server-owned sections keep model roles and advanced fields consistent across clients.
+struct ModelOverviewSection: Decodable, Identifiable, Sendable {
+    let id: String
+    let title: String
+    let provider: String
+    let enabled: Bool?
+    let summaryKeys: [String]
+    let settings: [ModelOverviewField]
+
+    /// Summary rows retain the server's chosen ordering without duplicating stored fields.
+    var summary: [ModelOverviewField] {
+        summaryKeys.compactMap { key in settings.first { $0.id == key } }
+    }
+}
+
+/// A revision-bound saved snapshot; it never claims which models are currently running.
+struct ModelSettingsOverview: Decodable, Sendable {
+    let apiVersion: Int
+    let revision: String
+    let valueState: String
+    let activationTracked: Bool
+    let pendingActivation: Bool
+    let sections: [ModelOverviewSection]
+    let readOnly: Bool
+
+    /// Shared transport validation prevents stale drafts and incompatible success-shaped responses.
+    func validate(revision expected: String) throws {
+        guard apiVersion == 2, valueState == "saved", readOnly,
+              Set(sections.map(\.id)).count == sections.count else { throw ClientError.malformedResponse }
+        let fields = sections.flatMap(\.settings)
+        guard Set(fields.map(\.id)).count == fields.count,
+              sections.allSatisfy({ section in
+                  section.summaryKeys.allSatisfy { key in section.settings.contains { $0.id == key } }
+              }),
+              fields.allSatisfy({ field in
+                  field.valueSource != .inherited || fields.contains { $0.id == field.inheritedFrom }
+              }) else { throw ClientError.malformedResponse }
+        guard revision == expected else { throw ClientError.operationFailed(
+            String(localized: "Settings changed on the server. Save or discard your draft, then reload.")) }
+    }
+
+    /// Search includes values and inherited-role labels, but never credential values.
+    func matchingSections(_ query: String) -> [ModelOverviewSection] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return sections }
+        return sections.compactMap { section in
+            let sectionMatches = [section.title, section.provider].contains {
+                $0.localizedCaseInsensitiveContains(query)
+            }
+            let settings = section.settings.filter { field in
+                sectionMatches || [field.field.label, field.id, field.displayValue, field.field.help ?? ""]
+                    .contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+            guard !settings.isEmpty else { return nil }
+            return ModelOverviewSection(id: section.id, title: section.title, provider: section.provider,
+                                        enabled: section.enabled,
+                                        summaryKeys: section.summaryKeys.filter { key in settings.contains { $0.id == key } },
+                                        settings: settings)
+        }
+    }
+}
+
 /// A redacted saved value; credentials and instruction bodies never enter this review.
 struct SavedSettingChange: Decodable, Identifiable, Sendable {
     let key: String

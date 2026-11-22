@@ -49,7 +49,8 @@ actor PreviewManagementAPI: ManagementAPI {
     func request(_ resource: String, body: JSONValue?, key: String?) async throws -> Data {
         if offline { throw URLError(.notConnectedToInternet) }
         if slowReads && (resource.hasSuffix("/logs") || body?["action"] == .string("workspace.list")
-                         || resource.hasPrefix("configuration/settings") || resource == "configuration/instructions") {
+                         || resource.hasPrefix("configuration/settings") || resource == "configuration/instructions"
+                         || resource == "configuration/model-settings") {
             try await Task.sleep(for: .seconds(2))
         }
         let value: JSONValue
@@ -232,6 +233,42 @@ actor PreviewManagementAPI: ManagementAPI {
         } else if resource == "configuration/instructions" {
             value = .object(["revision": .string(String(format: "%064d", configurationRevision)),
                              "instructions": .string(assistantInstructions)])
+        } else if resource == "configuration/model-settings" {
+            value = .object([
+                "api_version": .integer(2), "revision": .string(String(format: "%064d", configurationRevision)),
+                "value_state": .string("saved"), "read_only": .bool(true),
+                "activation_tracked": .bool(true), "pending_activation": .bool(!pendingSettings.isEmpty),
+                "sections": .array([
+                    .object([
+                        "id": .string("task"), "title": .string("Task models & provider"),
+                        "provider": .string("https://openrouter.ai/api/v1"), "enabled": .null,
+                        "summary_keys": .array([.string("AGENT_LLM_MODEL")]),
+                        "settings": .array([
+                            overviewSetting("models", "AGENT_LLM_MODEL", "Primary model", "example/model"),
+                            overviewSetting("models", "AGENT_LLM_OPENROUTER_API_KEY", "OpenRouter API key", "",
+                                            display: "Configured", source: "credential_status", secret: true),
+                            overviewSetting("catalog:llm", "AGENT_LLM_TEMPERATURE", "Model temperature", "0.2")
+                        ])
+                    ]),
+                    .object([
+                        "id": .string("research"), "title": .string("Deep research"),
+                        "provider": .string("https://openrouter.ai/api/v1"), "enabled": .bool(true),
+                        "summary_keys": .array([.string("AGENT_DEEP_RESEARCH_MODEL")]),
+                        "settings": .array([
+                            overviewSetting("catalog:deep_research", "AGENT_DEEP_RESEARCH_MODEL", "Deep research model", "",
+                                            display: "example/model", source: "inherited", inherited: "AGENT_LLM_MODEL")
+                        ])
+                    ]),
+                    .object([
+                        "id": .string("speech"), "title": .string("Speech generation"),
+                        "provider": .string("https://openrouter.ai/api/v1"), "enabled": .bool(false),
+                        "summary_keys": .array([.string("AGENT_TTS_MODEL")]),
+                        "settings": .array([
+                            overviewSetting("advanced:Model preset tool", "AGENT_TTS_MODEL", "Speech model", "example/speech")
+                        ])
+                    ])
+                ])
+            ])
         } else if resource == "configuration" || resource == "configuration/catalog" || resource.hasPrefix("configuration/settings") {
             value = .object([
                 "revision": .string(String(format: "%064d", configurationRevision)), "setup_complete": .bool(true),
@@ -255,6 +292,12 @@ actor PreviewManagementAPI: ManagementAPI {
                             boolean: true, help: "Restrict OpenRouter requests to Zero Data Retention endpoints."),
                     setting("models", "AGENT_LLM_ALLOWED_PROVIDERS", "Allowed OpenRouter providers", "",
                             help: "Leave empty for no preference."),
+                    setting("catalog:llm", "AGENT_LLM_TEMPERATURE", "Model temperature", "0.2",
+                            help: "Sampling temperature sent to the task model."),
+                    setting("catalog:deep_research", "AGENT_DEEP_RESEARCH_MODEL", "Deep research model", "",
+                            help: "Blank reuses the primary model."),
+                    setting("advanced:Model preset tool", "AGENT_TTS_MODEL", "Speech model", "example/speech",
+                            help: "Model used to generate speech."),
                     .object(["group": .string("models"), "key": .string("AGENT_LLM_OPENROUTER_API_KEY"),
                              "label": .string("OpenRouter API key"), "value": .string(""),
                              "secret": .bool(true), "boolean": .bool(false), "editable": .bool(true)]),
@@ -277,6 +320,9 @@ actor PreviewManagementAPI: ManagementAPI {
                 "groups": .array([
                     group("identity", "Assistant & people", help: "Name your assistant and set its timezone.", basic: true),
                     group("models", "Models & access", help: "Choose the models used for tasks.", basic: true),
+                    group("catalog:llm", "Generation & sampling", help: "Tune task-model sampling.", destination: "models"),
+                    group("catalog:deep_research", "Deep research", help: "Choose research models.", destination: "models"),
+                    group("advanced:Model preset tool", "Model tools & speech", help: "Choose speech models.", destination: "models"),
                     group("email", "Email", help: "Connect a dedicated assistant mailbox.", basic: true),
                     group("calendar", "Calendar", help: "Connect Google, Outlook or Zoho calendars.", basic: true),
                     group("calendar:google_2", "Google calendar 2", help: "An additional Google calendar account.",
@@ -346,6 +392,19 @@ actor PreviewManagementAPI: ManagementAPI {
             return try JSONEncoder().encode(JSONValue.object(configuration))
         }
         return try JSONEncoder().encode(value)
+    }
+
+    /// Pinned overview fixture preserves flattened settings, provenance, redaction and activation fields.
+    private func overviewSetting(_ group: String, _ key: String, _ label: String, _ value: String,
+                                 display: String? = nil, source: String = "configured",
+                                 inherited: String? = nil, secret: Bool = false) -> JSONValue {
+        .object([
+            "group": .string(group), "key": .string(key), "label": .string(label), "value": .string(value),
+            "default": .string(""), "secret": .bool(secret), "boolean": .bool(false), "editable": .bool(true),
+            "metadata": .object(["help": .string("Saved model setting.")]),
+            "display_value": .string(display ?? value), "value_source": .string(source),
+            "inherited_from": inherited.map(JSONValue.string) ?? .null, "pending_activation": .bool(false)
+        ])
     }
 
     private func skill(email: Bool, includeBody: Bool) -> JSONValue {

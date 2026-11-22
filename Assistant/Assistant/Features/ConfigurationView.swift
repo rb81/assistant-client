@@ -37,6 +37,9 @@ struct ConfigurationView: View {
     @State private var showingInstructionPreview = false
     @State private var modelAccess: [String: String] = [:]
     @State private var modelAccessLoaded = false
+    @State private var modelOverview: ModelSettingsOverview?
+    @State private var modelOverviewLoading = false
+    @State private var modelOverviewError: String?
     @AppStorage("settings.showIdentifiers") private var showIdentifiers = false
 
     private var navigation: SettingsNavigation? { (configuration ?? model.settingsMenu).map(SettingsNavigation.init) }
@@ -87,7 +90,7 @@ struct ConfigurationView: View {
             if let navigation {
                 ForEach(SettingsCategory.allCases) { scope in
                     let groups = navigation.pages(in: scope)
-                    if scope == .app || scope == .assistant || !groups.isEmpty {
+                    if scope == .app || scope == .assistant || scope == .models || !groups.isEmpty {
                         VStack(alignment: .leading, spacing: 2) {
                             Label(scope.title, systemImage: scope.symbol)
                                 .font(.caption.weight(.semibold))
@@ -99,6 +102,10 @@ struct ConfigurationView: View {
                                 .accessibilityIdentifier("settings-category-\(scope.rawValue)")
                             if scope == .app {
                                 sectionButton(String(localized: "On this Mac"), page: .app, in: scope, identifier: "app")
+                            }
+                            if scope == .models {
+                                sectionButton(String(localized: "Model settings overview"), page: .modelOverview,
+                                              in: scope, identifier: "overview")
                             }
                             ForEach(groups) { group in
                                 sectionButton(navigation.title(group, in: scope),
@@ -138,12 +145,14 @@ struct ConfigurationView: View {
     private var detailPane: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Text(search.isEmpty ? category.title : String(localized: "Search results"))
+                Text(page == .modelOverview ? String(localized: "Model settings") :
+                     search.isEmpty ? category.title : String(localized: "Search results"))
                     .font(.caption.weight(.semibold)).foregroundStyle(Theme.secondary).lineLimit(1)
                 Spacer(minLength: 4)
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass").accessibilityHidden(true)
                     TextField("Find a setting", text: $search).textFieldStyle(.plain)
+                        .accessibilityIdentifier("settings-search")
                     Button("Clear search", systemImage: "xmark.circle.fill") { search = "" }
                         .labelStyle(.iconOnly).buttonStyle(.plain)
                         .opacity(search.isEmpty ? 0 : 1).disabled(search.isEmpty)
@@ -192,13 +201,19 @@ struct ConfigurationView: View {
                         Button("Start your first chat", systemImage: "bubble.left.and.bubble.right") { model.newChatRequest = UUID() }
                             .buttonStyle(PrimaryButtonStyle())
                     }
-                    if !search.isEmpty { searchResults }
+                    if page == .modelOverview {
+                        ModelSettingsOverviewView(overview: modelOverview, loading: modelOverviewLoading,
+                                                  error: modelOverviewError, search: search,
+                                                  hasDraft: model.configurationDirty,
+                                                  edit: openModelEditor)
+                    } else if !search.isEmpty { searchResults }
                     else {
                         switch page {
                         case .group(let id): groupPage(id)
                         case .instructions: instructionsEditor
                         case .skills: SkillsSettingsView(model: model)
                         case .app: AppPreferencesView(model: model)
+                        case .modelOverview: EmptyView()
                         }
                     }
                     if configuration?.setupComplete == false { setupAcknowledgment }
@@ -220,7 +235,7 @@ struct ConfigurationView: View {
     }
 
     private var footerLoading: Bool {
-        busy || !loadingGroups.isEmpty || instructionsLoading || (configuration == nil && error == nil)
+        busy || !loadingGroups.isEmpty || instructionsLoading || modelOverviewLoading || (configuration == nil && error == nil)
     }
 
     private var footerTitle: String {
@@ -299,6 +314,17 @@ struct ConfigurationView: View {
         page = destination
         search = ""
         searchFocus = nil
+    }
+
+    /// Navigate to the owning editor without replacing an existing draft or hiding advanced fields.
+    private func openModelEditor(_ field: SettingField) {
+        guard let navigation, let owner = navigation.group(field.group) else {
+            modelOverviewError = String(localized: "This model setting’s editor is unavailable. Reload settings.")
+            return
+        }
+        let root = owner.parent.flatMap(navigation.group) ?? owner
+        selectPage(.group(root.id), in: navigation.category(for: root, field: field))
+        searchFocus = field.key
     }
 
     // MARK: - Pages
@@ -608,6 +634,7 @@ struct ConfigurationView: View {
         guard catalog == nil || !model.configurationDirty else { return }
         loadGeneration = UUID()
         loadingGroups = []; instructionsLoading = false
+        modelOverview = nil; modelOverviewLoading = false; modelOverviewError = nil
         modelAccessLoaded = false
         modelAccess = [:]
         busy = true
@@ -684,6 +711,20 @@ struct ConfigurationView: View {
         do {
             switch page {
             case .app, .skills: return
+            case .modelOverview:
+                guard modelOverview == nil, !modelOverviewLoading else { return }
+                modelOverviewLoading = true
+                defer { if loadGeneration == current { modelOverviewLoading = false } }
+                do {
+                    let overview = try await model.modelSettingsOverview(revision: configuration.revision)
+                    guard loadGeneration == current, !Task.isCancelled else { return }
+                    modelOverview = overview
+                    modelOverviewError = nil
+                } catch {
+                    guard loadGeneration == current, !Task.isCancelled else { return }
+                    modelOverviewError = error.presentableMessage
+                }
+                return
             case .instructions:
                 guard !instructionsLoaded, !instructionsLoading else { return }
                 instructionsLoading = true

@@ -2,6 +2,32 @@ import XCTest
 
 /// Native launch smoke test performs no server connection.
 final class AssistantUITests: XCTestCase {
+    /// One saved overview exposes disabled roles and retains the existing advanced editor.
+    @MainActor
+    func testModelSettingsOverviewLightAndDark() {
+        for dark in [false, true] {
+            let app = XCUIApplication()
+            app.launchArguments = ["--ui-fixture"] + (dark ? ["--ui-dark"] : [])
+            app.launch()
+            app.buttons["nav-configuration"].click()
+            let overview = app.buttons["settings-section-models-overview"]
+            XCTAssertTrue(overview.waitForExistence(timeout: 10))
+            overview.click()
+            let primary = app.buttons["model-overview-edit-AGENT_LLM_MODEL"]
+            XCTAssertTrue(primary.waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertTrue(app.staticTexts["Configured"].exists)
+            let search = app.textFields["settings-search"]
+            search.click()
+            search.typeText("temperature")
+            let edit = app.buttons["model-overview-edit-AGENT_LLM_TEMPERATURE"]
+            XCTAssertTrue(edit.waitForExistence(timeout: 10), app.debugDescription)
+            capture(app, name: dark ? "Model overview dark" : "Model overview light")
+            edit.click()
+            XCTAssertTrue(app.staticTexts["Generation & sampling"].waitForExistence(timeout: 10))
+            app.terminate()
+        }
+    }
+
     /// Locked guidance and attached preferences stay on the same screen.
     @MainActor
     func testLockedSkillIsReadableAndCanStartPreferenceDraft() {

@@ -959,6 +959,64 @@ final class ModernizationTests: XCTestCase {
         XCTAssertNil(restored.activationSummary)
     }
 
+    /// Overview discovery rejects older servers without substituting an empty successful page.
+    @MainActor
+    func testModelOverviewRequiresCapabilityAndValidatesRevision() async throws {
+        let api = PreviewManagementAPI()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let oldHealth = InstanceHealth(apiVersion: 2, instanceID: "overview", name: "Assistant",
+                                      capabilities: [], readOnly: false)
+        let unsupported = ClientModel(defaults: defaults, api: api, health: oldHealth)
+        do {
+            _ = try await unsupported.modelSettingsOverview(revision: "r")
+            XCTFail("An unsupported server must explain the missing feature")
+        } catch {
+            XCTAssertEqual(error as? ClientError, .serverOutdated("model settings overview"))
+        }
+        let health = InstanceHealth(apiVersion: 2, instanceID: "overview", name: "Assistant",
+                                    capabilities: ["configuration.model-settings"], readOnly: false)
+        let model = ClientModel(defaults: defaults, api: api, health: health)
+        let revision = String(repeating: "0", count: 64)
+        let overview = try await model.modelSettingsOverview(revision: revision)
+        XCTAssertEqual(overview.sections.map(\.id), ["task", "research", "speech"])
+        XCTAssertFalse(try XCTUnwrap(overview.sections.last?.enabled))
+        XCTAssertEqual(overview.matchingSections("speech").map(\.id), ["speech"])
+        XCTAssertEqual(overview.matchingSections("temperature").first?.settings.map(\.id), ["AGENT_LLM_TEMPERATURE"])
+        XCTAssertEqual(overview.sections[1].summary.first?.valueSource, .inherited)
+        let secret = try XCTUnwrap(overview.sections[0].settings.first { $0.field.secret })
+        XCTAssertEqual(secret.field.value, "")
+        XCTAssertEqual(secret.displayValue, "Configured")
+        do {
+            _ = try await model.modelSettingsOverview(revision: "stale")
+            XCTFail("A stale overview must not merge with an editing draft")
+        } catch {
+            guard case .operationFailed = error as? ClientError else { return XCTFail("Unexpected error: \(error)") }
+        }
+    }
+
+    /// Credential read-back and malformed field identity must never render as a valid overview.
+    func testModelOverviewRejectsSecretsAndDuplicateFields() throws {
+        let field = """
+        {"group":"models","key":"AGENT_LLM_OPENROUTER_API_KEY","label":"OpenRouter API key",
+         "value":"accidental-secret","secret":true,"boolean":false,"editable":true,
+         "display_value":"Configured","value_source":"credential_status","pending_activation":false}
+        """
+        XCTAssertThrowsError(try Wire.decoder().decode(ModelOverviewField.self, from: Data(field.utf8)))
+        let ordinary = """
+        {"group":"models","key":"MODEL","label":"Model","value":"example/model","secret":false,
+         "boolean":false,"editable":true,"display_value":"example/model",
+         "value_source":"configured","pending_activation":false}
+        """
+        let duplicated = """
+        {"api_version":2,"revision":"r","value_state":"saved","read_only":true,
+         "activation_tracked":false,"pending_activation":false,"sections":[
+          {"id":"task","title":"Task","provider":"example","summary_keys":["MODEL"],
+           "settings":[\(ordinary),\(ordinary)]}]}
+        """
+        let overview = try Wire.decoder().decode(ModelSettingsOverview.self, from: Data(duplicated.utf8))
+        XCTAssertThrowsError(try overview.validate(revision: "r"))
+    }
+
     /// Image URLs are removed before Textual can schedule any attachment loading.
     @MainActor
     func testMarkdownImagesRemainAltTextWithoutAttachmentURLs() throws {
