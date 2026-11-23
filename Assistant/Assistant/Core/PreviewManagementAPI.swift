@@ -282,7 +282,7 @@ actor PreviewManagementAPI: ManagementAPI {
                     ])
                 ])
             ])
-        } else if resource == "configuration/models" {
+        } else if resource.hasPrefix("configuration/models") {
             value = .object([
                 "provider": .string("openai"),
                 "models": .array([.object([

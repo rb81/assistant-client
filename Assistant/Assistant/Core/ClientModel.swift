@@ -302,12 +302,16 @@ final class ClientModel {
     }
 
     /// Provider credentials remain on the server while the authenticated client requests model IDs.
-    func providerModelCatalog() async throws -> ProviderModelCatalog {
+    func providerModelCatalog(providerID: String? = nil) async throws -> ProviderModelCatalog {
         guard health?.capabilities.contains("configuration.model-catalog") == true else {
             throw ClientError.serverOutdated(String(localized: "provider model discovery"))
         }
-        let result = try await cachedRead("configuration/models", maxAge: 5 * 60)
+        let resource = providerID.map { "configuration/models?provider=\($0)" } ?? "configuration/models"
+        let result = try await cachedRead(resource, maxAge: 5 * 60)
         let catalog = try Wire.decoder().decode(ProviderModelCatalog.self, from: JSONEncoder().encode(result))
+        if let providerID, catalog.provider != providerID {
+            throw ClientError.serverOutdated(String(localized: "provider model catalog"))
+        }
         try catalog.validate()
         return catalog
     }

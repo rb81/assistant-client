@@ -38,9 +38,9 @@ struct ConfigurationView: View {
     @State private var showingReview = false
     @State private var modelAccess: [String: String] = [:]
     @State private var modelAccessLoaded = false
-    @State private var providerModelCatalog: ProviderModelCatalog?
-    @State private var providerModelCatalogError: String?
-    @State private var providerModelCatalogLoading = false
+    @State private var providerModelCatalogs: [String: ProviderModelCatalog] = [:]
+    @State private var providerModelCatalogErrors: [String: String] = [:]
+    @State private var providerModelCatalogLoading: Set<String> = []
     @State private var modelOverview: ModelSettingsOverview?
     @State private var modelOverviewLoading = false
     @State private var modelOverviewError: String?
@@ -81,6 +81,50 @@ struct ConfigurationView: View {
 
     private var canSave: Bool {
         preview?["valid"] == .bool(true) && model.configurationDirty
+    }
+
+    private var modelRouteProblem: String? {
+        let routes: [(String, String?)] = [
+            ("AGENT_LLM_MODEL", "AGENT_MODEL_ROUTES_TASK_PROVIDER"),
+            ("AGENT_LLM_FALLBACK_MODEL", "AGENT_MODEL_ROUTES_TASK_PROVIDER"),
+            ("AGENT_NAMING_MODEL", "AGENT_MODEL_ROUTES_NAMING_PROVIDER"),
+            ("AGENT_ROUTING_MODEL", "AGENT_MODEL_ROUTES_ROUTING_PROVIDER"),
+            ("AGENT_LIMITS_SUMMARIZATION_MODEL", "AGENT_MODEL_ROUTES_SUMMARIZATION_PROVIDER"),
+            ("AGENT_MEMORY_STEWARD_MODEL", "AGENT_MODEL_ROUTES_MEMORY_PROVIDER"),
+            ("AGENT_DEEP_RESEARCH_MODEL", "AGENT_MODEL_ROUTES_RESEARCH_PROVIDER"),
+            ("AGENT_DEEP_RESEARCH_SEARCH_MODEL", "AGENT_MODEL_ROUTES_RESEARCH_SEARCH_PROVIDER"),
+            ("AGENT_SEARCH_MODEL", "AGENT_MODEL_ROUTES_WEB_SEARCH_PROVIDER"),
+            ("AGENT_SECURITY_DEVELOPMENT_MODEL", "AGENT_MODEL_ROUTES_DEVELOPMENT_PROVIDER"),
+        ]
+        let defaultProviderChanged = values["AGENT_LLM_PROVIDER"] != nil || values["AGENT_LLM_BASE_URL"] != nil
+        for (modelKey, routeKey) in routes {
+            let routeChanged = routeKey.map { values[$0] != nil } ?? false
+            let inheritsChangedDefault = routeKey.map {
+                let selected = effectiveValue($0).lowercased()
+                return defaultProviderChanged && (selected.isEmpty || selected == "inherit" || selected == "auto")
+            } ?? defaultProviderChanged
+            guard usesProviderModelCatalog(modelKey),
+                  values[modelKey] != nil || routeChanged || inheritsChangedDefault else { continue }
+            let provider = selectedModelProvider(for: modelKey)
+            let selected = effectiveValue(modelKey).split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            if selected.isEmpty {
+                if modelKey == "AGENT_LLM_FALLBACK_MODEL" { continue }
+                return String(localized: "Choose a model for each changed provider route before reviewing these settings.")
+            }
+            let available: Set<String>
+            if provider == "openrouter", let purpose = ModelPurpose.forSetting(modelKey) {
+                available = Set(model.modelCatalog.models(zdr: zdrOnly(for: modelKey), purpose: purpose).map(\.id))
+            } else if let catalog = providerModelCatalogs[provider] {
+                available = Set(catalog.models.map(\.id))
+            } else {
+                return String(localized: "Discover models for the selected provider before reviewing these settings.")
+            }
+            if selected.contains(where: { !available.contains($0) }) {
+                return String(localized: "A selected model is not available in the current provider catalog. Choose a discovered model.")
+            }
+        }
+        return nil
     }
 
     // MARK: - Navigation
@@ -282,10 +326,11 @@ struct ConfigurationView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(footerTitle)
                         .font(.caption).foregroundStyle(Theme.secondary).lineLimit(1)
-                    if let feedback = error ?? credentialError ?? notice {
+                    if let feedback = error ?? credentialError ?? modelRouteProblem ?? notice {
                         Button { showingFeedback.toggle() } label: {
                             Text(feedback).font(.caption)
-                                .foregroundStyle(error != nil || credentialError != nil ? .red : Theme.secondary)
+                                .foregroundStyle(error != nil || credentialError != nil || modelRouteProblem != nil
+                                                 ? .red : Theme.secondary)
                                 .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .buttonStyle(.plain)
@@ -302,6 +347,7 @@ struct ConfigurationView: View {
                             ErrorBanner(message: credentialError)
                             Button("Retry credential status") { Task { await loadCredentials() } }
                         }
+                        if let modelRouteProblem { ErrorBanner(message: modelRouteProblem) }
                         if let notice { Text(notice).textSelection(.enabled) }
                         Button("Done") { showingFeedback = false }
                     }.padding().frame(width: 420)
@@ -318,7 +364,7 @@ struct ConfigurationView: View {
                     if preview != nil { showingReview = true }
                     else { Task { await review() } }
                 }
-                .buttonStyle(PrimaryButtonStyle()).disabled(!model.configurationDirty || busy)
+                .buttonStyle(PrimaryButtonStyle()).disabled(!model.configurationDirty || busy || modelRouteProblem != nil)
             }
         }
     }
@@ -416,16 +462,23 @@ struct ConfigurationView: View {
 
     /// Quick model edits and full settings pages share bindings, eligibility, and draft review.
     private func settingRow(_ field: SettingField) -> some View {
-        SettingRow(field: field, showIdentifier: showIdentifiers,
+        let provider = selectedModelProvider(for: field)
+        return SettingRow(field: field, showIdentifier: showIdentifiers,
                    credential: credentials.first { $0.name == field.key },
                    credentialStatusLoaded: credentialStatusLoaded,
                    modelCatalog: model.modelCatalog, modelPurpose: modelPurpose(field),
                    providerModels: providerModels(field),
-                   providerModelsLoading: providerModelCatalogLoading,
-                   refreshProviderModels: { await loadProviderModels() },
+                   providerModelsLoading: providerModelCatalogLoading.contains(provider),
+                   refreshProviderModels: { await loadProviderModels(for: field, force: true) },
                    eligibilityWarning: modelEligibilityWarning(field),
-                   zdrOnly: zdrOnly(field), choices: voiceChoices(field), value: binding(field))
+                   zdrOnly: zdrOnly(field), choices: providerChoices(field) ?? voiceChoices(field),
+                   value: binding(field))
             .disabled(ModelPurpose.forSetting(field.key) != nil && !modelAccessLoaded)
+            .task(id: "\(provider):\(modelAccessLoaded)") {
+                guard modelPurpose(field) == nil, configuredProviderIDs.contains(provider),
+                      !providerIsDisabled(provider) else { return }
+                await loadProviderModels(for: field)
+            }
     }
 
     private func effectiveValue(_ key: String) -> String {
@@ -442,16 +495,7 @@ struct ConfigurationView: View {
 
     private func modelPurpose(_ field: SettingField) -> ModelPurpose? {
         guard let purpose = ModelPurpose.forSetting(field.key) else { return nil }
-        if field.key == "AGENT_TTS_MODEL" || field.key.hasPrefix("AGENT_FUSION_") { return purpose }
-        if field.key == "AGENT_SECURITY_DECISION_MODEL_MODEL" {
-            let provider = effectiveValue("AGENT_SECURITY_DECISION_MODEL_PROVIDER")
-            return provider == "openrouter" ? purpose : nil
-        }
-        let provider = effectiveValue("AGENT_LLM_PROVIDER")
-        if !provider.isEmpty && !["auto", "openrouter"].contains(provider) { return nil }
-        guard let url = URL(string: effectiveValue("AGENT_LLM_BASE_URL")),
-              url.scheme?.lowercased() == "https", url.host?.lowercased() == "openrouter.ai" else { return nil }
-        return purpose
+        return selectedModelProvider(for: field) == "openrouter" ? purpose : nil
     }
 
     private func zdrOnly(_ field: SettingField) -> Bool {
@@ -460,41 +504,179 @@ struct ConfigurationView: View {
     }
 
     private func modelEligibilityWarning(_ field: SettingField) -> String? {
-        guard ["AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_SECURITY_DEVELOPMENT_MODEL",
-               "AGENT_DEEP_RESEARCH_MODEL"].contains(field.key) else { return nil }
-        let provider = selectedModelProvider()
-        if let providerModelCatalogError { return providerModelCatalogError }
-        if let catalog = providerModelCatalog, catalog.provider == provider, let warning = catalog.warning {
-            return warning
+        guard isModelIdentifier(field.key) else { return nil }
+        let provider = selectedModelProvider(for: field)
+        if let error = providerModelCatalogErrors[provider] { return error }
+        if field.key == "AGENT_SECURITY_DECISION_MODEL_MODEL" {
+            let credential = provider == "openrouter"
+                ? "AGENT_LLM_OPENROUTER_API_KEY" : "AGENT_SECURITY_DECISION_MODEL_API_KEY"
+            let saved = Set(configuration?.credentialNames ?? credentials.map(\.name))
+            if !saved.contains(credential) && values[credential]?.isEmpty != false {
+                return String(localized: "Save this provider's screening credential before using its model.")
+            }
+            if zdrOnly(field) {
+                guard provider == "openrouter" || provider == "openai" else {
+                    return String(localized: "Strict Zero Data Retention blocks this screening provider.")
+                }
+                let verifiedProviders = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_PROVIDERS")
+                    .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
+                guard verifiedProviders.contains(provider) else {
+                    return String(localized: "Verify this screening account and add it to the verified ZDR provider list.")
+                }
+                let model = effectiveValue(field.key).trimmingCharacters(in: .whitespaces)
+                let verifiedModels = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_MODELS")
+                    .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+                guard !model.isEmpty, verifiedModels.contains(provider + ":" + model) else {
+                    return String(localized: "This screening model is not in the administrator-verified ZDR model list.")
+                }
+                if provider == "openrouter" {
+                    return String(localized: "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail.")
+                }
+            }
+            return nil
         }
-        if providerModelCatalog != nil, providerModelCatalog?.provider != provider {
-            return String(localized: "Save the selected provider and credential before discovering its model list.")
+        if providerIsDisabled(provider) {
+            return String(localized: "This provider is disabled. Enable it before using its models.")
         }
-        if provider == "gemini" {
+        if !configuredProviderIDs.contains(provider) {
+            return String(localized: "Configure and save this provider's credentials before selecting its models.")
+        }
+        if zdrOnly(field), provider == "gemini" {
             return String(localized: "Gemini Developer API does not provide strict Zero Data Retention; strict mode blocks this route.")
         }
         if provider == "openai-compatible" && zdrOnly(field) {
             return String(localized: "Strict Zero Data Retention blocks custom OpenAI-compatible endpoints.")
         }
+        if zdrOnly(field) {
+            let verifiedProviders = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_PROVIDERS")
+                .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
+            guard verifiedProviders.contains(provider) else {
+                return String(localized: "Strict mode is fail-closed. Verify this provider account and add it to the verified ZDR provider list.")
+            }
+            let model = effectiveValue(field.key).trimmingCharacters(in: .whitespaces)
+            let verifiedModels = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_MODELS")
+                .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+            guard !model.isEmpty, verifiedModels.contains(provider + ":" + model) else {
+                return String(localized: "This exact model is not in the administrator-verified ZDR model list.")
+            }
+            if provider == "openrouter" {
+                return String(localized: "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail.")
+            }
+        }
+        if usesProviderModelCatalog(field.key), provider != "openrouter",
+           providerModelCatalogs[provider] == nil {
+            return String(localized: "Load this provider's model list before saving a model selection.")
+        }
         if provider == "cloudflare" {
             return String(localized: "Verify AI Gateway logging, caching, and Logpush settings. Request headers do not disable Logpush.")
         }
-        guard zdrOnly(field) else { return nil }
-        let verifiedProviders = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_PROVIDERS")
+        if let catalog = providerModelCatalogs[provider] {
+            let selectedModels = effectiveValue(field.key).split(separator: ",").map(String.init)
+            if selectedModels.contains(where: { model in !catalog.models.contains { $0.id == model } }) {
+                return String(localized: "The selected model is not in this provider's latest discovered model list.")
+            }
+        }
+        return providerModelCatalogs[provider]?.warning
+    }
+
+    private func providerIsDisabled(_ provider: String) -> Bool {
+        effectiveValue("AGENT_PROVIDERS_DISABLED")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .contains(provider)
+    }
+
+    private func providerChoices(_ field: SettingField) -> [String]? {
+        guard field.key == "AGENT_LLM_PROVIDER" ||
+                (field.key.hasPrefix("AGENT_MODEL_ROUTES_") && field.key.hasSuffix("_PROVIDER")) else { return nil }
+        let allowed = field.choices ?? []
+        let disabled = Set(effectiveValue("AGENT_PROVIDERS_DISABLED")
             .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
-        guard verifiedProviders.contains(provider) else {
-            return String(localized: "Strict mode is fail-closed. Verify this provider account and add it to the verified ZDR provider list.")
+        let configured = configuredProviderIDs.filter { !disabled.contains($0) }
+        if field.key == "AGENT_LLM_PROVIDER" {
+            return ["auto"] + configured.filter { allowed.contains($0) }
         }
-        let model = effectiveValue(field.key).trimmingCharacters(in: .whitespaces)
-        let verifiedModels = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_MODELS")
-            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
-        guard !model.isEmpty, verifiedModels.contains(provider + ":" + model) else {
-            return String(localized: "This exact model is not in the administrator-verified ZDR model list.")
+        var choices = configured.filter { allowed.contains($0) }
+        if allowed.contains("inherit") { choices.insert("inherit", at: 0) }
+        return choices
+    }
+
+    private var configuredProviderIDs: [String] {
+        let savedNames = Set(configuration?.credentialNames ??
+            credentials.filter { $0.active && $0.status != "removal pending" }.map(\.name))
+        let credentialProviders: [(String, String)] = [
+            ("openrouter", "AGENT_LLM_OPENROUTER_API_KEY"),
+            ("openai", "AGENT_LLM_OPENAI_API_KEY"),
+            ("anthropic", "AGENT_LLM_ANTHROPIC_API_KEY"),
+            ("gemini", "AGENT_LLM_GEMINI_API_KEY"),
+            ("cloudflare", "AGENT_LLM_CLOUDFLARE_API_KEY"),
+        ]
+        let configured = credentialProviders.compactMap { savedNames.contains($0.1) ? $0.0 : nil }
+        let customURL = effectiveValue("AGENT_PROVIDERS_OPENAI_COMPATIBLE_BASE_URL")
+        let hasOpenAIKey = savedNames.contains("AGENT_LLM_OPENAI_API_KEY")
+        return orderedProviders(configured + (hasOpenAIKey && !customURL.isEmpty ? ["openai-compatible"] : []))
+    }
+
+    private func orderedProviders(_ values: [String]) -> [String] {
+        let available = Set(values)
+        let priority = effectiveValue("AGENT_PROVIDERS_PRIORITY")
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+        return priority.filter { available.contains($0) } + values.filter { !priority.contains($0) }
+    }
+
+    private func isModelIdentifier(_ key: String) -> Bool {
+        [
+            "AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_NAMING_MODEL", "AGENT_ROUTING_MODEL",
+            "AGENT_LIMITS_SUMMARIZATION_MODEL", "AGENT_MEMORY_STEWARD_MODEL", "AGENT_DEEP_RESEARCH_MODEL",
+            "AGENT_DEEP_RESEARCH_SEARCH_MODEL", "AGENT_SEARCH_MODEL", "AGENT_FUSION_MODEL",
+            "AGENT_FUSION_ANALYSIS_MODELS", "AGENT_SECURITY_DECISION_MODEL_MODEL",
+            "AGENT_SECURITY_DEVELOPMENT_MODEL", "AGENT_TTS_MODEL",
+        ].contains(key)
+    }
+
+    private func usesProviderModelCatalog(_ key: String) -> Bool {
+        [
+            "AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_NAMING_MODEL", "AGENT_ROUTING_MODEL",
+            "AGENT_LIMITS_SUMMARIZATION_MODEL", "AGENT_MEMORY_STEWARD_MODEL", "AGENT_DEEP_RESEARCH_MODEL",
+            "AGENT_DEEP_RESEARCH_SEARCH_MODEL", "AGENT_SEARCH_MODEL", "AGENT_SECURITY_DEVELOPMENT_MODEL",
+        ].contains(key)
+    }
+
+    private func modelProviderSetting(for key: String) -> String? {
+        switch key {
+        case "AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL": return "AGENT_MODEL_ROUTES_TASK_PROVIDER"
+        case "AGENT_NAMING_MODEL": return "AGENT_MODEL_ROUTES_NAMING_PROVIDER"
+        case "AGENT_ROUTING_MODEL": return "AGENT_MODEL_ROUTES_ROUTING_PROVIDER"
+        case "AGENT_LIMITS_SUMMARIZATION_MODEL": return "AGENT_MODEL_ROUTES_SUMMARIZATION_PROVIDER"
+        case "AGENT_MEMORY_STEWARD_MODEL": return "AGENT_MODEL_ROUTES_MEMORY_PROVIDER"
+        case "AGENT_DEEP_RESEARCH_MODEL": return "AGENT_MODEL_ROUTES_RESEARCH_PROVIDER"
+        case "AGENT_DEEP_RESEARCH_SEARCH_MODEL": return "AGENT_MODEL_ROUTES_RESEARCH_SEARCH_PROVIDER"
+        case "AGENT_SEARCH_MODEL": return "AGENT_MODEL_ROUTES_WEB_SEARCH_PROVIDER"
+        case "AGENT_FUSION_MODEL", "AGENT_FUSION_ANALYSIS_MODELS": return "AGENT_MODEL_ROUTES_FUSION_PROVIDER"
+        case "AGENT_SECURITY_DECISION_MODEL_MODEL": return "AGENT_SECURITY_DECISION_MODEL_PROVIDER"
+        case "AGENT_SECURITY_DEVELOPMENT_MODEL": return "AGENT_MODEL_ROUTES_DEVELOPMENT_PROVIDER"
+        case "AGENT_TTS_MODEL": return "AGENT_MODEL_ROUTES_SPEECH_PROVIDER"
+        default: return nil
         }
-        if provider == "openrouter" {
-            return String(localized: "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail.")
+    }
+
+    private func selectedModelProvider(for field: SettingField) -> String {
+        selectedModelProvider(for: field.key)
+    }
+
+    private func selectedModelProvider(for fieldKey: String) -> String {
+        if let key = modelProviderSetting(for: fieldKey) {
+            let configured = effectiveValue(key).lowercased()
+            if !configured.isEmpty && !["auto", "inherit"].contains(configured) { return configured }
         }
-        return nil
+        if fieldKey == "AGENT_SECURITY_DECISION_MODEL_PROVIDER" {
+            return effectiveValue(fieldKey).lowercased()
+        }
+        return selectedModelProvider()
+    }
+
+    private func zdrOnly(for _: String) -> Bool {
+        effectiveValue("AGENT_LLM_ZDR_ONLY") == "true"
     }
 
     private func selectedModelProvider() -> String {
@@ -710,7 +892,7 @@ struct ConfigurationView: View {
         modelOverview = nil; modelOverviewLoading = false; modelOverviewError = nil
         modelAccessLoaded = false
         modelAccess = [:]
-        providerModelCatalog = nil; providerModelCatalogError = nil; providerModelCatalogLoading = false
+        providerModelCatalogs = [:]; providerModelCatalogErrors = [:]; providerModelCatalogLoading = []
         busy = true
         defer { busy = false }
         do {
@@ -772,9 +954,6 @@ struct ConfigurationView: View {
                 return (key, value)
             })
             modelAccessLoaded = true
-            if selectedModelProvider() != "openrouter" {
-                await loadProviderModels()
-            }
         } catch {
             guard current == loadGeneration, !Task.isCancelled else { return }
             self.error = error.presentableMessage ?? self.error
@@ -782,31 +961,28 @@ struct ConfigurationView: View {
     }
 
     private func providerModels(_ field: SettingField) -> [ProviderModel]? {
-        guard ["AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_SECURITY_DEVELOPMENT_MODEL",
-               "AGENT_DEEP_RESEARCH_MODEL"].contains(field.key),
-              modelPurpose(field) == nil,
-              providerModelCatalog?.provider == selectedModelProvider() else { return nil }
-        return providerModelCatalog?.models
+        guard usesProviderModelCatalog(field.key), modelPurpose(field) == nil else { return nil }
+        let provider = selectedModelProvider(for: field)
+        guard !providerIsDisabled(provider), configuredProviderIDs.contains(provider) else { return nil }
+        return providerModelCatalogs[provider]?.models
     }
 
-    private func loadProviderModels() async {
+    private func loadProviderModels(for field: SettingField, force: Bool = false) async {
         guard modelAccessLoaded else { return }
         let current = loadGeneration
-        providerModelCatalogLoading = true
-        defer { if current == loadGeneration { providerModelCatalogLoading = false } }
+        let provider = selectedModelProvider(for: field)
+        guard !providerModelCatalogLoading.contains(provider) else { return }
+        if !force, providerModelCatalogs[provider] != nil { return }
+        providerModelCatalogLoading.insert(provider)
+        defer { if current == loadGeneration { providerModelCatalogLoading.remove(provider) } }
         do {
-            let catalog = try await model.providerModelCatalog()
+            let catalog = try await model.providerModelCatalog(providerID: provider)
             guard current == loadGeneration, !Task.isCancelled else { return }
-            guard catalog.provider == selectedModelProvider() else {
-                providerModelCatalog = nil
-                providerModelCatalogError = String(localized: "Save the selected provider and credential before discovering its model list.")
-                return
-            }
-            providerModelCatalog = catalog
-            providerModelCatalogError = nil
+            providerModelCatalogs[provider] = catalog
+            providerModelCatalogErrors[provider] = nil
         } catch {
             guard current == loadGeneration, !Task.isCancelled else { return }
-            providerModelCatalogError = error.presentableMessage
+            providerModelCatalogErrors[provider] = error.presentableMessage
         }
     }
 

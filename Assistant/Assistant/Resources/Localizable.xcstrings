@@ -63,6 +63,9 @@
     "A saved model is not in this catalog or does not meet this field’s requirements. Choose an eligible model before saving." : {
 
     },
+    "A selected model is not available in the current provider catalog. Choose a discovered model." : {
+
+    },
     "A settings or service action is still running. Wait for its result in Activity before applying." : {
 
     },
@@ -259,6 +262,9 @@
     "Choose a discovered model…" : {
 
     },
+    "Choose a model for each changed provider route before reviewing these settings." : {
+
+    },
     "Choose a model…" : {
 
     },
@@ -287,6 +293,9 @@
 
     },
     "Configuration saved and application services activated." : {
+
+    },
+    "Configure and save this provider's credentials before selecting its models." : {
 
     },
     "Confirm" : {
@@ -445,6 +454,9 @@
     "Disconnected" : {
 
     },
+    "Discover models for the selected provider before reviewing these settings." : {
+
+    },
     "Dismiss notice" : {
 
     },
@@ -565,6 +577,9 @@
     "Keep editing" : {
 
     },
+    "Knowledge & Tools" : {
+
+    },
     "Last checked %@" : {
 
     },
@@ -608,6 +623,9 @@
 
     },
     "Load the saved configuration into Assistant’s application services. Active work may be interrupted, and enabled connections may start processing messages." : {
+
+    },
+    "Load this provider's model list before saving a model selection." : {
 
     },
     "Loading conversation…" : {
@@ -676,7 +694,7 @@
     "Model settings unavailable" : {
 
     },
-    "Models & Voice" : {
+    "Models & Workflows" : {
 
     },
     "Most recent successful network reads, including tunnel and server time. Cached navigation does not make another request." : {
@@ -863,9 +881,6 @@
     "Optional service is turned off." : {
 
     },
-    "Or enter a model ID manually" : {
-
-    },
     "Organized automatically" : {
 
     },
@@ -920,7 +935,13 @@
     "Provider / service: %@" : {
 
     },
+    "provider model catalog" : {
+
+    },
     "provider model discovery" : {
+
+    },
+    "Providers & Privacy" : {
 
     },
     "Public availability can differ from your account and may change." : {
@@ -1121,7 +1142,7 @@
     "Save settings" : {
 
     },
-    "Save the selected provider and credential before discovering its model list." : {
+    "Save this provider's screening credential before using its model." : {
 
     },
     "Saved · Apply to activate" : {
@@ -1412,6 +1433,9 @@
     "Strict Zero Data Retention blocks custom OpenAI-compatible endpoints." : {
 
     },
+    "Strict Zero Data Retention blocks this screening provider." : {
+
+    },
     "structured settings" : {
 
     },
@@ -1425,6 +1449,9 @@
 
     },
     "Succeeded" : {
+
+    },
+    "System & Operations" : {
 
     },
     "Task completed" : {
@@ -1488,6 +1515,9 @@
 
     },
     "The saved provider list could not be read. Refresh it to try again." : {
+
+    },
+    "The selected model is not in this provider's latest discovered model list." : {
 
     },
     "The send outcome is unconfirmed. Your draft is preserved. Check Activity > Operation History and the conversation before sending it again." : {
@@ -1571,6 +1601,9 @@
     "This profile reached a different installation. Verify the server before creating a new profile." : {
 
     },
+    "This provider is disabled. Enable it before using its models." : {
+
+    },
     "This removes database history and resets application data. Configuration is retained and mailbox position is preserved. This cannot be undone by this client." : {
 
     },
@@ -1581,6 +1614,9 @@
 
     },
     "This saves your changes without restarting Assistant. Use Review & Apply in the saved-settings banner when you are ready." : {
+
+    },
+    "This screening model is not in the administrator-verified ZDR model list." : {
 
     },
     "This sends your message through this client, not email or Telegram. It can change where the assistant sends future replies in this conversation." : {
@@ -1647,6 +1683,9 @@
 
     },
     "Verify this destination with ssh in Terminal first. Unknown or changed host keys and interactive password prompts are not accepted." : {
+
+    },
+    "Verify this screening account and add it to the verified ZDR provider list." : {
 
     },
     "View image" : {

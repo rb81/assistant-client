@@ -51,14 +51,17 @@ struct NavigationHistory<Location: Equatable> {
 
 /// Stable product destinations replace catalog-level navigation.
 enum SettingsCategory: String, CaseIterable, Identifiable {
-    case app, assistant, models, connections, safety, advanced
+    case app, assistant, providers, models, knowledge, connections, safety, operations, advanced
     var id: String { rawValue }
     var title: String {
         switch self {
         case .assistant: return String(localized: "Assistant")
-        case .models: return String(localized: "Models & Voice")
+        case .providers: return String(localized: "Providers & Privacy")
+        case .models: return String(localized: "Models & Workflows")
+        case .knowledge: return String(localized: "Knowledge & Tools")
         case .connections: return String(localized: "Connections")
         case .safety: return String(localized: "Safety & Approvals")
+        case .operations: return String(localized: "System & Operations")
         case .app: return String(localized: "General")
         case .advanced: return String(localized: "Advanced")
         }
@@ -68,9 +71,12 @@ enum SettingsCategory: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .assistant: return "sparkles"
+        case .providers: return "server.rack"
         case .models: return "waveform"
+        case .knowledge: return "books.vertical"
         case .connections: return "network"
         case .safety: return "lock.shield"
+        case .operations: return "gearshape.2"
         case .app: return "macwindow"
         case .advanced: return "slider.horizontal.3"
         }
@@ -126,10 +132,14 @@ struct SettingsNavigation {
         }
         if let category = root.destination.flatMap(SettingsCategory.init(rawValue:)) { return category }
         switch root.id {
+        case "providers", "provider-privacy": return .providers
         case "models", "embeddings", "transcription": return .models
+        case "knowledge", "memory", "context", "workspace", "filesystem", "web_fetch",
+             "search", "prompt", "skills", "conversion", "tool_result_cache": return .knowledge
+        case "operations", "deployment", "database", "task_agent", "supervisor", "client",
+             "heartbeat", "reminders": return .operations
         case "email", "telegram", "calendar", "zoom", "dropbox": return .connections
         case "approvals", "security": return .safety
-        case "deployment": return .advanced
         default: return .assistant
         }
     }
@@ -188,8 +198,8 @@ struct SettingsNavigation {
 
     /// Older servers send no group metadata; derive flat top-level pages from field groups.
     private static func fallbackGroups(_ settings: [SettingField]) -> [SettingGroup] {
-        let essentials: Set = ["identity", "models", "email", "telegram", "calendar", "zoom", "dropbox",
-                               "transcription", "approvals", "security", "embeddings"]
+        let essentials: Set = ["identity", "providers", "provider-privacy", "models", "email", "telegram",
+                               "calendar", "zoom", "dropbox", "transcription", "approvals", "security", "embeddings"]
         var seen: [String] = []
         for field in settings where !seen.contains(field.group) { seen.append(field.group) }
         return seen.map { id in

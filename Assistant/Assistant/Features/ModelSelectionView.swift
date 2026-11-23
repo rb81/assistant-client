@@ -129,8 +129,6 @@ struct ProviderModelSelectionView: View {
                     if loading { ProgressView("Loading models…") }
                 }.padding(16).frame(width: 440)
             }
-            TextField("Or enter a model ID manually", text: $value)
-                .textFieldStyle(.roundedBorder)
         }
     }
 }

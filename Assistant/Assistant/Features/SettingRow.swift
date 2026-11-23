@@ -84,8 +84,12 @@ struct SettingRow: View {
         } else if let modelCatalog, let modelPurpose {
             ModelSelectionView(catalog: modelCatalog, purpose: modelPurpose, zdr: zdrOnly,
                                multiple: field.key == "AGENT_FUSION_ANALYSIS_MODELS", value: $value)
-        } else if ["AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_SECURITY_DEVELOPMENT_MODEL",
-                   "AGENT_DEEP_RESEARCH_MODEL"].contains(field.key), modelPurpose == nil,
+        } else if [
+            "AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_NAMING_MODEL",
+            "AGENT_ROUTING_MODEL", "AGENT_LIMITS_SUMMARIZATION_MODEL", "AGENT_MEMORY_STEWARD_MODEL",
+            "AGENT_DEEP_RESEARCH_MODEL", "AGENT_DEEP_RESEARCH_SEARCH_MODEL", "AGENT_SEARCH_MODEL",
+            "AGENT_SECURITY_DEVELOPMENT_MODEL",
+        ].contains(field.key), modelPurpose == nil,
                   let refreshProviderModels {
             ProviderModelSelectionView(models: providerModels ?? [], loading: providerModelsLoading,
                                        refresh: refreshProviderModels, value: $value)
