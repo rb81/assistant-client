@@ -136,7 +136,10 @@ struct EmailApprovalPresentation {
     }
     var original: [String] {
         let parts = action["parts"]?.array ?? []
-        let plain = parts.filter { $0["filename"] == .null && $0["content_type"]?.string == "text/plain" }
+        let plain = parts.filter {
+            $0["filename"] == .null && $0["content_type"]?.string == "text/plain"
+                && !($0["content"]?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
         let textParts = plain.isEmpty ? parts.filter {
             $0["filename"] == .null && $0["content_type"]?.string == "text/html"
         } : plain

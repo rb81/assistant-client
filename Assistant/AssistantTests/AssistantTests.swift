@@ -24,6 +24,17 @@ final class AssistantTests: XCTestCase {
         XCTAssertEqual(presentation.review, .null)
     }
 
+    func testEmailApprovalPresentationFallsBackToHtmlWhenPlainTextIsEmpty() {
+        let action: JSONValue = .object([
+            "parts": .array([
+                .object(["filename": .null, "content_type": .string("text/plain"), "content": .string(" \n")]),
+                .object(["filename": .null, "content_type": .string("text/html"), "content": .string("<p>HTML body</p>")]),
+            ]),
+        ])
+
+        XCTAssertEqual(EmailApprovalPresentation(action: action).original, ["<p>HTML body</p>"])
+    }
+
     /// Delete operations carry the reviewed revision and cannot be built for locked skills.
     func testSkillDeletionUsesReviewedRevision() throws {
         let editable = Data("""
