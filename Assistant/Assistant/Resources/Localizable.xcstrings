@@ -137,6 +137,9 @@
     "Affected application services will be started or recreated. Active work may be interrupted. Enabled connections may begin processing messages." : {
 
     },
+    "AI-generated summary" : {
+
+    },
     "All changes saved" : {
 
     },
@@ -198,6 +201,9 @@
 
     },
     "Attachment" : {
+
+    },
+    "Attachments" : {
 
     },
     "Audio playback could not start. Download the file to open it in another player." : {
@@ -386,6 +392,9 @@
     "Data reset completed. Reconnect to continue." : {
 
     },
+    "Date (email header)" : {
+
+    },
     "Deep research" : {
 
     },
@@ -531,6 +540,9 @@
 
     },
     "Forward" : {
+
+    },
+    "From (email header)" : {
 
     },
     "Gemini Developer API does not provide strict Zero Data Retention; strict mode blocks this route." : {
@@ -692,6 +704,9 @@
     "Message Assistant" : {
 
     },
+    "Message ID" : {
+
+    },
     "Model lists are cached on this Mac. Automatic refresh checks once a week while the app is running; manual refresh works even when it’s turned off. This does not change server settings." : {
 
     },
@@ -821,6 +836,9 @@
     "No settings match “%@”." : {
 
     },
+    "No text content is available." : {
+
+    },
     "No tracked saved changes are awaiting activation." : {
 
     },
@@ -831,6 +849,9 @@
 
     },
     "Not installed yet." : {
+
+    },
+    "Not provided" : {
 
     },
     "Not running." : {
@@ -903,7 +924,13 @@
     "Organized automatically" : {
 
     },
+    "Original message" : {
+
+    },
     "Other settings" : {
+
+    },
+    "Outcome uncertain" : {
 
     },
     "Parent folder" : {
@@ -951,6 +978,12 @@
     "Private alerts while Assistant is running. Message bodies are never included. In-app updates remain available without permission." : {
 
     },
+    "Processed" : {
+
+    },
+    "Processing" : {
+
+    },
     "Provider / service: %@" : {
 
     },
@@ -981,6 +1014,9 @@
     "Publish this skill revision?" : {
 
     },
+    "Queued" : {
+
+    },
     "Quick Look is unavailable. Download this document to open it." : {
 
     },
@@ -991,6 +1027,9 @@
 
     },
     "Quitting closes this Mac's SSH tunnel, not the server or its running work." : {
+
+    },
+    "Recent approved email processing" : {
 
     },
     "Reconnecting" : {
@@ -1242,6 +1281,9 @@
     "Scheduled runs will appear here." : {
 
     },
+    "Screening" : {
+
+    },
     "Search choices" : {
 
     },
@@ -1261,6 +1303,9 @@
 
     },
     "Search skills" : {
+
+    },
+    "Security-held email: review before release." : {
 
     },
     "See what Assistant did and where it sent the result." : {
@@ -1458,6 +1503,9 @@
     "Stop Assistant" : {
 
     },
+    "Stopped before processing" : {
+
+    },
     "Strict mode is fail-closed. Verify this provider account and add it to the verified ZDR provider list." : {
 
     },
@@ -1470,6 +1518,9 @@
     "structured settings" : {
 
     },
+    "Subject" : {
+
+    },
     "Submission details" : {
 
     },
@@ -1480,6 +1531,12 @@
 
     },
     "Succeeded" : {
+
+    },
+    "Summary" : {
+
+    },
+    "Summary unavailable; review the original message before deciding." : {
 
     },
     "System & Operations" : {
@@ -1534,6 +1591,9 @@
 
     },
     "The locked skill will not change." : {
+
+    },
+    "The outcome may be partial. Check the email and task before taking further action." : {
 
     },
     "The response exceeded the client display limit." : {
@@ -1678,6 +1738,9 @@
 
     },
     "Unknown" : {
+
+    },
+    "Unknown status" : {
 
     },
     "Unread" : {

@@ -83,7 +83,7 @@ struct MutationReview: View {
     }
 }
 
-/// Flattened labeled fields keep complete approval details selectable and easy to scan.
+/// Email reviews default to a short summary; other actions retain their exact details.
 struct ReviewDetails: View {
     let value: JSONValue
 
@@ -104,14 +104,85 @@ struct ReviewDetails: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(rows(value).enumerated()), id: \.offset) { _, row in
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(row.0.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(.caption.weight(.semibold)).foregroundStyle(Theme.secondary)
-                    Text(verbatim: row.1).textSelection(.enabled)
+        if ["email_ingestion", "screened_email_release"].contains(value["type"]?.string ?? "") {
+            EmailApprovalDetails(action: value)
+        } else {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(rows(value).enumerated()), id: \.offset) { _, row in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(row.0.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(.caption.weight(.semibold)).foregroundStyle(Theme.secondary)
+                        Text(verbatim: row.1).textSelection(.enabled)
+                    }
                 }
             }
+        }
+    }
+}
+
+/// Extracts original message text and legacy headers without exposing attachment bytes.
+struct EmailApprovalPresentation {
+    let action: JSONValue
+
+    var review: JSONValue { action["review"] ?? .null }
+    func header(_ name: String) -> String {
+        (action["headers"]?.array ?? []).first {
+            $0["name"]?.string?.lowercased() == name.lowercased()
+        }?["value"]?.string ?? String(localized: "Not provided")
+    }
+    var attachments: [String] {
+        review["attachments"]?.array?.compactMap(\.string)
+            ?? (action["parts"]?.array ?? []).compactMap { $0["filename"]?.string }
+    }
+    var original: [String] {
+        let parts = action["parts"]?.array ?? []
+        let plain = parts.filter { $0["filename"] == .null && $0["content_type"]?.string == "text/plain" }
+        let textParts = plain.isEmpty ? parts.filter {
+            $0["filename"] == .null && $0["content_type"]?.string == "text/html"
+        } : plain
+        return textParts.compactMap { $0["content"]?.string }
+    }
+}
+
+/// Displays source headers and a generated summary without hiding the original message.
+struct EmailApprovalDetails: View {
+    let action: JSONValue
+    private var presentation: EmailApprovalPresentation { EmailApprovalPresentation(action: action) }
+    private var review: JSONValue { presentation.review }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if action["type"]?.string == "screened_email_release" {
+                Text("Security-held email: review before release.").foregroundStyle(Theme.secondary)
+            }
+            field(review["summary_source"]?.string == "ai" ? "AI-generated summary" : "Summary",
+                  review["summary"]?.string ?? String(localized: "Summary unavailable; review the original message before deciding."))
+            field("From (email header)", review["sender"]?.string ?? presentation.header("From"))
+            field("Subject", review["subject"]?.string ?? presentation.header("Subject"))
+            field("Date (email header)", review["date"]?.string ?? presentation.header("Date"))
+            field("Message ID", review["message_id"]?.string ?? presentation.header("Message-ID"))
+            if let screening = review["screening"]?.string, !screening.isEmpty {
+                field("Screening", screening)
+            }
+            if !presentation.attachments.isEmpty {
+                field("Attachments", presentation.attachments.joined(separator: ", "))
+            }
+            DisclosureGroup("Original message") {
+                if presentation.original.isEmpty {
+                    Text("No text content is available.").foregroundStyle(Theme.secondary)
+                } else {
+                    ForEach(Array(presentation.original.enumerated()), id: \.offset) { _, content in
+                        Text(verbatim: content).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    private func field(_ label: LocalizedStringKey, _ content: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label).font(.caption.weight(.semibold)).foregroundStyle(Theme.secondary)
+            Text(verbatim: content).textSelection(.enabled)
         }
     }
 }
@@ -120,6 +191,7 @@ struct ReviewDetails: View {
 struct ApprovalsView: View {
     let model: ClientModel
     @State private var approvals: [JSONValue] = []
+    @State private var executions: [JSONValue] = []
     @State private var error: String?
     @State private var pending: ReviewedMutation?
     @State private var offset = 0
@@ -134,6 +206,7 @@ struct ApprovalsView: View {
                     Button("Previous") { offset -= 50; Task { await load() } }.disabled(offset == 0)
                     Button("Next") { offset += 50; Task { await load() } }.disabled(approvals.count < 50)
                 }
+
                 if let error { ErrorBanner(message: error) }
                 if approvals.isEmpty && error == nil { Text("Nothing needs your approval on this page.").foregroundStyle(Theme.secondary) }
                 ForEach(Array(approvals.enumerated()), id: \.offset) { _, approval in
@@ -157,6 +230,29 @@ struct ApprovalsView: View {
                                         Button(decision.title) { decide(id, version, decision, approval) }
                                             .buttonStyle(.bordered)
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+                if !executions.isEmpty {
+                    Text("Recent approved email processing").font(.title3.weight(.semibold))
+                    ForEach(Array(executions.enumerated()), id: \.offset) { _, execution in
+                        ManagementPanel {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(verbatim: execution["review"]?["subject"]?.string ?? String(localized: "Email"))
+                                    .font(.headline)
+                                Text(executionStatus(execution["status"]?.string))
+                                    .foregroundStyle(Theme.secondary)
+                                if let messageID = execution["review"]?["message_id"]?.string {
+                                    Text(verbatim: messageID).font(.caption).textSelection(.enabled)
+                                }
+                                if let updated = execution["updated_at"]?.string {
+                                    Text(verbatim: updated).font(.caption).foregroundStyle(Theme.secondary)
+                                }
+                                if execution["status"]?.string == "uncertain" {
+                                    Text("The outcome may be partial. Check the email and task before taking further action.")
+                                        .foregroundStyle(Theme.secondary)
                                 }
                             }
                         }
@@ -187,7 +283,44 @@ struct ApprovalsView: View {
             }
             let result = try await model.read("approvals?limit=50&offset=\(offset)")
             guard let values = result["approvals"]?.array else { throw ClientError.malformedResponse }
-            approvals = values; error = nil
+            approvals = values
+            executions = result["executions"]?.array ?? []
+            error = nil
         } catch { self.error = error.presentableMessage ?? self.error }
     }
+
+    private func executionStatus(_ status: String?) -> LocalizedStringKey {
+        switch status {
+        case "pending": return "Queued"
+        case "running": return "Processing"
+        case "succeeded": return "Processed"
+        case "failed": return "Stopped before processing"
+        case "uncertain": return "Outcome uncertain"
+        default: return "Unknown status"
+        }
+    }
+}
+
+private let emailApprovalPreview: JSONValue = .object([
+        "type": .string("email_ingestion"),
+        "review": .object([
+            "summary": .string("Prepare a report for the meeting."),
+            "summary_source": .string("ai"),
+            "sender": .string("admin@example.com"),
+            "subject": .string("Meeting report"),
+            "date": .string("Mon, 23 Nov 2026 10:00:00 +0000"),
+            "attachments": .array([.string("report.pdf")]),
+        ]),
+        "parts": .array([.object([
+            "content_type": .string("text/plain"), "filename": .null,
+            "content": .string("Please prepare a report for the meeting."),
+        ])]),
+])
+
+#Preview("Email approval light") {
+    EmailApprovalDetails(action: emailApprovalPreview).padding(24).frame(width: 520).preferredColorScheme(.light)
+}
+
+#Preview("Email approval dark") {
+    EmailApprovalDetails(action: emailApprovalPreview).padding(24).frame(width: 520).preferredColorScheme(.dark)
 }

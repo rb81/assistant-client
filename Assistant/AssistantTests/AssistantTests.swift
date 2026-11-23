@@ -6,6 +6,24 @@ import XCTest
 
 /// Isolated transport and mutation tests never contact a real server or Docker installation.
 final class AssistantTests: XCTestCase {
+    /// Original email text stays separate from attachment content and supports older servers.
+    func testEmailApprovalPresentationSeparatesOriginalAndAttachments() {
+        let action: JSONValue = .object([
+            "headers": .array([.object(["name": .string("Subject"), "value": .string("Legacy subject")])]),
+            "parts": .array([
+                .object(["filename": .null, "content_type": .string("text/html"), "content": .string("<p>HTML</p>")]),
+                .object(["filename": .null, "content_type": .string("text/plain"), "content": .string("Original")]),
+                .object(["filename": .string("attachment.txt"), "content_type": .string("text/plain"),
+                         "content": .string("Attachment contents"), "content_base64": .string("c2VjcmV0")]),
+            ]),
+        ])
+        let presentation = EmailApprovalPresentation(action: action)
+        XCTAssertEqual(presentation.header("subject"), "Legacy subject")
+        XCTAssertEqual(presentation.original, ["Original"])
+        XCTAssertEqual(presentation.attachments, ["attachment.txt"])
+        XCTAssertEqual(presentation.review, .null)
+    }
+
     /// Delete operations carry the reviewed revision and cannot be built for locked skills.
     func testSkillDeletionUsesReviewedRevision() throws {
         let editable = Data("""
