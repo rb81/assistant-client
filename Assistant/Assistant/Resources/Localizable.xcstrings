@@ -856,7 +856,7 @@
     "OpenRouter providers" : {
 
     },
-    "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail." : {
+    "OpenRouter ZDR routing may include Safety Retention endpoints. Review account privacy settings or a guardrail; this warning does not block usage." : {
 
     },
     "Operation %@ ended as %@. Inspect current state before retrying." : {

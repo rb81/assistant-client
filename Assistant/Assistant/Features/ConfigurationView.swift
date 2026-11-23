@@ -515,6 +515,9 @@ struct ConfigurationView: View {
                 return String(localized: "Save this provider's screening credential before using its model.")
             }
             if zdrOnly(field) {
+                if provider == "openrouter" {
+                    return String(localized: "OpenRouter ZDR routing may include Safety Retention endpoints. Review account privacy settings or a guardrail; this warning does not block usage.")
+                }
                 guard provider == "openrouter" || provider == "openai" else {
                     return String(localized: "Strict Zero Data Retention blocks this screening provider.")
                 }
@@ -528,9 +531,6 @@ struct ConfigurationView: View {
                     .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
                 guard !model.isEmpty, verifiedModels.contains(provider + ":" + model) else {
                     return String(localized: "This screening model is not in the administrator-verified ZDR model list.")
-                }
-                if provider == "openrouter" {
-                    return String(localized: "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail.")
                 }
             }
             return nil
@@ -548,6 +548,9 @@ struct ConfigurationView: View {
             return String(localized: "Strict Zero Data Retention blocks custom OpenAI-compatible endpoints.")
         }
         if zdrOnly(field) {
+            if provider == "openrouter" {
+                return String(localized: "OpenRouter ZDR routing may include Safety Retention endpoints. Review account privacy settings or a guardrail; this warning does not block usage.")
+            }
             let verifiedProviders = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_PROVIDERS")
                 .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
             guard verifiedProviders.contains(provider) else {
@@ -558,9 +561,6 @@ struct ConfigurationView: View {
                 .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
             guard !model.isEmpty, verifiedModels.contains(provider + ":" + model) else {
                 return String(localized: "This exact model is not in the administrator-verified ZDR model list.")
-            }
-            if provider == "openrouter" {
-                return String(localized: "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail.")
             }
         }
         if usesProviderModelCatalog(field.key), provider != "openrouter",
