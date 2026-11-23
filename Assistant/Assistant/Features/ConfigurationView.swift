@@ -611,7 +611,12 @@ struct ConfigurationView: View {
     }
 
     private func providerIsDisabled(_ provider: String) -> Bool {
-        effectiveValue("AGENT_PROVIDERS_DISABLED")
+        if let control = configuration?.settings.first(where: {
+            $0.metadata?["provider_enablement"]?.string == provider
+        }) {
+            return effectiveValue(control.key).lowercased() == "false"
+        }
+        return effectiveValue("AGENT_PROVIDERS_DISABLED")
             .split(separator: ",")
             .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
             .contains(provider)
@@ -620,10 +625,8 @@ struct ConfigurationView: View {
     private func providerChoices(_ field: SettingField) -> [String]? {
         guard field.key == "AGENT_LLM_PROVIDER" ||
                 (field.key.hasPrefix("AGENT_MODEL_ROUTES_") && field.key.hasSuffix("_PROVIDER")) else { return nil }
-        let allowed = field.choices ?? []
-        let disabled = Set(effectiveValue("AGENT_PROVIDERS_DISABLED")
-            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
-        let configured = configuredProviderIDs.filter { !disabled.contains($0) }
+        let allowed = field.metadata?["enum"]?.array?.compactMap(\.string) ?? field.choices ?? []
+        let configured = configuredProviderIDs.filter { !providerIsDisabled($0) }
         if field.key == "AGENT_LLM_PROVIDER" {
             return ["auto"] + configured.filter { allowed.contains($0) }
         }

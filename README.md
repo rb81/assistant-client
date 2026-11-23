@@ -71,6 +71,9 @@ Dynamic provider-setting lists require `configuration.choices` on the server.
 Save provider credentials before refreshing those lists. ZDR verification lists
 are administrator attestations, not automatic proof of retention eligibility.
 OpenRouter's Safety Retention caveat remains advisory and does not block usage.
+Each provider block has an **Enabled** toggle. Turning it off blocks model
+requests and fallbacks while keeping its credentials. Existing disabled-provider
+choices are preserved; review and apply changes to activate the new state.
 
 **Review changes** opens a modal with validation and save actions, so review
 never depends on scrolling to the end of a page. **Back** and **Forward**

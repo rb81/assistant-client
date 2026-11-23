@@ -96,8 +96,9 @@ struct SettingsNavigation {
     private let fieldsByGroup: [String: [SettingField]]
 
     init(_ configuration: FullConfiguration) {
-        fieldsByGroup = Dictionary(grouping: configuration.settings, by: \.group)
-        groups = configuration.groups ?? Self.fallbackGroups(configuration.settings)
+        let fields = configuration.settings.filter { $0.metadata?["hidden"] != .bool(true) }
+        fieldsByGroup = Dictionary(grouping: fields, by: \.group)
+        groups = configuration.groups ?? Self.fallbackGroups(fields)
     }
 
     /// Everyday pages, in the server's order.

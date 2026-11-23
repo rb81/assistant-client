@@ -72,6 +72,29 @@ final class ModernizationTests: XCTestCase {
         XCTAssertEqual(navigation.title(reader, in: .advanced), "External reader & limits")
     }
 
+    /// Provider blocks expose positive toggles, not their legacy storage list or search entry.
+    func testProviderEnableControlsHideLegacyAvailabilityEditor() throws {
+        let configuration = try Wire.decoder().decode(FullConfiguration.self, from: Data("""
+        {"revision":"r1","setup_complete":true,"instructions":"","setup_notice":"",
+         "groups":[{"id":"providers","title":"AI providers","basic":true,"destination":"providers"}],
+         "settings":[
+          {"group":"providers","key":"AGENT_PROVIDERS_DISABLED","label":"Disabled providers",
+           "value":"openai","secret":false,"boolean":false,"editable":true,
+           "metadata":{"hidden":true}},
+          {"group":"providers","key":"AGENT_PROVIDERS_OPENAI_ENABLED","label":"Enabled",
+           "value":"false","secret":false,"boolean":true,"editable":true,
+           "metadata":{"level":"basic","section":"OpenAI","provider_enablement":"openai"}},
+          {"group":"providers","key":"AGENT_PROVIDERS_GEMINI_ENABLED","label":"Enabled",
+           "value":"true","secret":false,"boolean":true,"editable":true,
+           "metadata":{"level":"basic","section":"Gemini","provider_enablement":"gemini"}}]}
+        """.utf8))
+        let navigation = SettingsNavigation(configuration)
+        XCTAssertEqual(navigation.sections(in: "providers").compactMap(\.title), ["OpenAI", "Gemini"])
+        XCTAssertTrue(navigation.fields(in: "providers").allSatisfy(\.boolean))
+        XCTAssertTrue(navigation.search("Disabled providers").isEmpty)
+        XCTAssertEqual(configuration.settings.first?.value, "openai")
+    }
+
     @MainActor
     func testReadCacheCoalescesRequestsAndInvalidatesExplicitly() async throws {
         let api = ChatAPI()
