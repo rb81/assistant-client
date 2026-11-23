@@ -1170,6 +1170,46 @@ final class ModernizationTests: XCTestCase {
         XCTAssertThrowsError(try overview.validate(revision: "r"))
     }
 
+    /// Settings destinations added with provider routing remain valid overview links.
+    func testModelOverviewAcceptsAllCurrentSettingsDestinations() throws {
+        for destination in ["providers", "knowledge", "operations"] {
+            let json = """
+            {"api_version":2,"revision":"r","value_state":"saved","read_only":true,
+             "activation_tracked":false,"pending_activation":false,"sections":[
+              {"id":"task","title":"Task responses","provider":"openrouter","summary_keys":["MODEL"],
+               "selection_keys":[],"related_settings":[
+                {"group":"providers","title":"Provider settings","destination":"\(destination)","field_key":"MODEL"}],
+               "settings":[{"group":"providers","key":"MODEL","label":"Model","value":"example/model",
+                "secret":false,"boolean":false,"editable":true,"display_value":"example/model",
+                "value_source":"configured","pending_activation":false}]}]}
+            """
+            let overview = try Wire.decoder().decode(ModelSettingsOverview.self, from: Data(json.utf8))
+            XCTAssertNoThrow(try overview.validate(revision: "r"))
+        }
+    }
+
+    /// Privacy and fallback choices are discovered by the server, not typed as comma-separated IDs.
+    @MainActor
+    func testProviderSettingChoicesRequireCapabilityAndDecodeLabels() async throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let api = PreviewManagementAPI()
+        let unsupported = ClientModel(defaults: defaults, api: api,
+                                      health: InstanceHealth(apiVersion: 2, instanceID: "choices",
+                                                             name: "Assistant", capabilities: [], readOnly: false))
+        do {
+            _ = try await unsupported.settingChoices(key: "AGENT_LLM_ZDR_VERIFIED_MODELS")
+            XCTFail("An older server must explain that choices are unavailable")
+        } catch {
+            XCTAssertEqual(error as? ClientError, .serverOutdated("provider setting choices"))
+        }
+        let model = ClientModel(defaults: defaults, api: api,
+                                health: InstanceHealth(apiVersion: 2, instanceID: "choices", name: "Assistant",
+                                                       capabilities: ["configuration.choices"], readOnly: false))
+        let choices = try await model.settingChoices(key: "AGENT_LLM_ZDR_VERIFIED_MODELS")
+        XCTAssertEqual(choices.choices, ["openai:gpt-4.1"])
+        XCTAssertEqual(choices.choiceLabels["openai:gpt-4.1"], "OpenAI / GPT-4.1")
+    }
+
     /// Image URLs are removed before Textual can schedule any attachment loading.
     @MainActor
     func testMarkdownImagesRemainAltTextWithoutAttachmentURLs() throws {

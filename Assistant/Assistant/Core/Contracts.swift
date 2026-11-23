@@ -342,6 +342,14 @@ struct ProviderModelCatalog: Decodable, Sendable {
     }
 }
 
+/// On-demand list options use saved server credentials, without exposing credentials to the client.
+struct SettingChoices: Decodable, Sendable {
+    let key: String
+    let choices: [String]
+    let choiceLabels: [String: String]
+    let warnings: [String]
+}
+
 /// Server-owned sections keep model roles and advanced fields consistent across clients.
 struct ModelOverviewSection: Decodable, Identifiable, Sendable {
     let id: String
@@ -388,7 +396,8 @@ struct ModelSettingsOverview: Decodable, Sendable {
                           section.settings.contains { $0.id == key && !$0.field.secret }
                       }
                       && (section.relatedSettings ?? []).allSatisfy { link in
-                          ["assistant", "models", "connections", "safety", "advanced"].contains(link.destination)
+                          ["assistant", "providers", "models", "connections", "knowledge",
+                           "safety", "operations", "advanced"].contains(link.destination)
                               && section.settings.contains { $0.id == link.fieldKey }
                       }
               }),

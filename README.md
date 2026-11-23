@@ -19,7 +19,7 @@ connection without keeping a terminal open.
 | **Activity** | Use the toolbar bell for permission requests, real reply/update notices, and operation history. Unconfirmed actions are distinct from approval requests and are never automatically repeated. |
 | **Settings** | Restore the complete cached menu without progressively appearing sections. Keep ordinary setup beside each feature's enable switch, with power-user tuning under Advanced. Retain drafts while navigating, edit instructions in a bounded Markdown editor, and review before saving. A persistent **Review & Apply** banner lists saved changes awaiting activation. Skills prefetch and show 20 per page; adjustable pane widths are remembered. |
 | **OpenRouter models** | Search cached, capability-filtered models and restrict hosting providers. Require ZDR in server settings; manage weekly/manual catalog refresh locally. |
-| **Model settings** | Edit individual model choices directly under **Settings > Models & Voice**, including disabled features. Provider, voice, safety, and tuning controls stay in linked settings pages. Changes use the same reviewed draft. |
+| **Model settings** | Choose providers and models under **Settings > Models & Workflows**, including disabled features. **Providers & Privacy** has separate OpenRouter, OpenAI, Anthropic, Gemini, Cloudflare and OpenAI Compatible blocks with native endpoints prefilled. Privacy, hosting-provider and ordered fallback lists use selection controls. Changes use the same reviewed draft. |
 | **Live updates** | Receive resumable updates with polling fallback and optional macOS notifications while the app is open. |
 
 ## Download
@@ -66,6 +66,11 @@ Quick model editing requires an updated server advertising
 controls show your draft; effective-model and activation notices describe saved
 values, not verified running models or live provider access. Other controls stay
 in their linked pages.
+
+Dynamic provider-setting lists require `configuration.choices` on the server.
+Save provider credentials before refreshing those lists. ZDR verification lists
+are administrator attestations, not automatic proof of retention eligibility.
+OpenRouter's Safety Retention caveat remains advisory and does not block usage.
 
 **Review changes** opens a modal with validation and save actions, so review
 never depends on scrolling to the end of a page. **Back** and **Forward**

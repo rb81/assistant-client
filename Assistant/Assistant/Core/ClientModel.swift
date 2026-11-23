@@ -316,6 +316,21 @@ final class ClientModel {
         return catalog
     }
 
+    /// Selection options are discovered only when their settings page is opened.
+    func settingChoices(key: String, force: Bool = false) async throws -> SettingChoices {
+        guard health?.capabilities.contains("configuration.choices") == true else {
+            throw ClientError.serverOutdated(String(localized: "provider setting choices"))
+        }
+        guard let encoded = key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            throw ClientError.malformedResponse
+        }
+        let result = try await cachedRead("configuration/choices?key=\(encoded)", maxAge: force ? 0 : 5 * 60)
+        let choices = try Wire.decoder().decode(SettingChoices.self, from: JSONEncoder().encode(result))
+        guard choices.key == key, Set(choices.choices).count == choices.choices.count,
+              choices.choices.allSatisfy({ !$0.isEmpty }) else { throw ClientError.malformedResponse }
+        return choices
+    }
+
     func prefetchSettingsMenu() async {
         guard health?.capabilities.contains("configuration.structured") == true else { return }
         do { _ = try await configurationCatalog() }

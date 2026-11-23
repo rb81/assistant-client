@@ -41,6 +41,9 @@ struct ConfigurationView: View {
     @State private var providerModelCatalogs: [String: ProviderModelCatalog] = [:]
     @State private var providerModelCatalogErrors: [String: String] = [:]
     @State private var providerModelCatalogLoading: Set<String> = []
+    @State private var settingChoiceLists: [String: SettingChoices] = [:]
+    @State private var settingChoicesLoading: Set<String> = []
+    @State private var settingChoiceErrors: [String: String] = [:]
     @State private var modelOverview: ModelSettingsOverview?
     @State private var modelOverviewLoading = false
     @State private var modelOverviewError: String?
@@ -470,15 +473,43 @@ struct ConfigurationView: View {
                    providerModels: providerModels(field),
                    providerModelsLoading: providerModelCatalogLoading.contains(provider),
                    refreshProviderModels: { await loadProviderModels(for: field, force: true) },
-                   eligibilityWarning: modelEligibilityWarning(field),
+                   eligibilityWarning: settingChoiceErrors[field.key] ?? modelEligibilityWarning(field),
                    zdrOnly: zdrOnly(field), choices: providerChoices(field) ?? voiceChoices(field),
+                   selectionChoices: settingChoiceLists[field.key],
+                   choicesLoading: settingChoicesLoading.contains(field.key),
+                   refreshChoices: field.metadata?["choices_source"]?.string == nil ||
+                       field.metadata?["selection"]?.string == "single" ? nil : {
+                       await loadSettingChoices(field, force: true)
+                   },
                    value: binding(field))
             .disabled(ModelPurpose.forSetting(field.key) != nil && !modelAccessLoaded)
             .task(id: "\(provider):\(modelAccessLoaded)") {
+                if field.metadata?["choices_source"]?.string != nil,
+                   field.metadata?["selection"]?.string != "single" {
+                    await loadSettingChoices(field)
+                }
                 guard modelPurpose(field) == nil, configuredProviderIDs.contains(provider),
                       !providerIsDisabled(provider) else { return }
                 await loadProviderModels(for: field)
             }
+    }
+
+    private func loadSettingChoices(_ field: SettingField, force: Bool = false) async {
+        guard field.metadata?["choices_source"]?.string != nil,
+              !settingChoicesLoading.contains(field.key),
+              force || settingChoiceLists[field.key] == nil else { return }
+        let current = loadGeneration
+        settingChoicesLoading.insert(field.key)
+        defer { if current == loadGeneration { settingChoicesLoading.remove(field.key) } }
+        do {
+            let choices = try await model.settingChoices(key: field.key, force: force)
+            guard current == loadGeneration, !Task.isCancelled else { return }
+            settingChoiceLists[field.key] = choices
+            settingChoiceErrors[field.key] = nil
+        } catch {
+            guard current == loadGeneration, !Task.isCancelled else { return }
+            settingChoiceErrors[field.key] = error.presentableMessage
+        }
     }
 
     private func effectiveValue(_ key: String) -> String {
@@ -613,8 +644,9 @@ struct ConfigurationView: View {
         ]
         let configured = credentialProviders.compactMap { savedNames.contains($0.1) ? $0.0 : nil }
         let customURL = effectiveValue("AGENT_PROVIDERS_OPENAI_COMPATIBLE_BASE_URL")
-        let hasOpenAIKey = savedNames.contains("AGENT_LLM_OPENAI_API_KEY")
-        return orderedProviders(configured + (hasOpenAIKey && !customURL.isEmpty ? ["openai-compatible"] : []))
+        let hasCustomKey = savedNames.contains("AGENT_PROVIDERS_OPENAI_COMPATIBLE_API_KEY") ||
+            savedNames.contains("AGENT_LLM_OPENAI_API_KEY")
+        return orderedProviders(configured + (hasCustomKey && !customURL.isEmpty ? ["openai-compatible"] : []))
     }
 
     private func orderedProviders(_ values: [String]) -> [String] {
@@ -893,6 +925,7 @@ struct ConfigurationView: View {
         modelAccessLoaded = false
         modelAccess = [:]
         providerModelCatalogs = [:]; providerModelCatalogErrors = [:]; providerModelCatalogLoading = []
+        settingChoiceLists = [:]; settingChoiceErrors = [:]; settingChoicesLoading = []
         busy = true
         defer { busy = false }
         do {
@@ -942,7 +975,7 @@ struct ConfigurationView: View {
     private func loadModelAccess() async {
         let current = loadGeneration
         do {
-            let result = try await model.cachedRead("configuration/settings?group=models")
+            let result = try await model.cachedRead("configuration/settings")
             guard current == loadGeneration, !Task.isCancelled else { return }
             guard result["revision"]?.string == configuration?.revision else {
                 throw ClientError.operationFailed(String(localized: "Settings changed on the server. Reload before editing."))

@@ -282,6 +282,13 @@ actor PreviewManagementAPI: ManagementAPI {
                     ])
                 ])
             ])
+        } else if resource.hasPrefix("configuration/choices?") {
+            let key = resource.components(separatedBy: "key=").last?.components(separatedBy: "&").first ?? ""
+            value = .object([
+                "key": .string(key), "choices": .array([.string("openai:gpt-4.1")]),
+                "choice_labels": .object(["openai:gpt-4.1": .string("OpenAI / GPT-4.1")]),
+                "warnings": .array([]),
+            ])
         } else if resource.hasPrefix("configuration/models") {
             value = .object([
                 "provider": .string("openai"),
