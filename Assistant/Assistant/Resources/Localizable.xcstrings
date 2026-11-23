@@ -199,6 +199,9 @@
     "Automatic naming failed" : {
 
     },
+    "Available provider models" : {
+
+    },
     "Awaiting more messages to name" : {
 
     },
@@ -214,12 +217,6 @@
     "Browse Assistant’s workspace. Shared files stay separate from chat task deletion." : {
 
     },
-    "Cancel" : {
-
-    },
-    "Cancel task" : {
-
-    },
     "Can’t check Assistant’s services right now." : {
 
     },
@@ -229,13 +226,19 @@
     "Can’t refresh service status. The results below are from the last successful check." : {
 
     },
+    "Cancel" : {
+
+    },
+    "Cancel task" : {
+
+    },
     "Catalog eligibility does not guarantee account access or current endpoint availability." : {
 
     },
-    "Change Assistant service state" : {
+    "Change a workspace item" : {
 
     },
-    "Change a workspace item" : {
+    "Change Assistant service state" : {
 
     },
     "Channel" : {
@@ -253,13 +256,16 @@
     "Check that Docker is running on the computer that hosts Assistant, then retry." : {
 
     },
-    "Choose OpenRouter model" : {
+    "Choose a discovered model…" : {
 
     },
     "Choose a model…" : {
 
     },
     "Choose models here. Provider, safety, voice, and tuning controls stay in the linked settings pages. Changes use the same reviewed draft." : {
+
+    },
+    "Choose OpenRouter model" : {
 
     },
     "Clear cached conversations from this Mac?" : {
@@ -289,13 +295,13 @@
     "Connect" : {
 
     },
+    "Connect to an instance first." : {
+
+    },
     "Connect to Assistant" : {
 
     },
     "Connect to Assistant through SSH, or use an installation on this Mac." : {
-
-    },
-    "Connect to an instance first." : {
 
     },
     "Connect to the installation that created this update before opening it." : {
@@ -505,6 +511,9 @@
     "Forward" : {
 
     },
+    "Gemini Developer API does not provide strict Zero Data Retention; strict mode blocks this route." : {
+
+    },
     "General" : {
 
     },
@@ -574,6 +583,9 @@
     "Live stream connected" : {
 
     },
+    "live updates" : {
+
+    },
     "Live updates paused. Checking periodically." : {
 
     },
@@ -622,6 +634,12 @@
     "Logs · %@" : {
 
     },
+    "macOS cannot play this media format or codec. Download it to use another player." : {
+
+    },
+    "macOS could not decode this image. It may be damaged or unsupported." : {
+
+    },
     "Make and verify a server backup before resetting." : {
 
     },
@@ -647,6 +665,9 @@
 
     },
     "Model settings" : {
+
+    },
+    "model settings overview" : {
 
     },
     "Model settings overview" : {
@@ -725,6 +746,9 @@
 
     },
     "No model settings match this search." : {
+
+    },
+    "No models match this search." : {
 
     },
     "No operations yet" : {
@@ -814,6 +838,9 @@
     "OpenRouter providers" : {
 
     },
+    "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail." : {
+
+    },
     "Operation %@ ended as %@. Inspect current state before retrying." : {
       "localizations" : {
         "en" : {
@@ -827,13 +854,16 @@
     "Operation %@ is still pending. Inspect Operations before retrying." : {
 
     },
-    "Operation History" : {
-
-    },
     "Operation history" : {
 
     },
+    "Operation History" : {
+
+    },
     "Optional service is turned off." : {
+
+    },
+    "Or enter a model ID manually" : {
 
     },
     "Organized automatically" : {
@@ -846,6 +876,9 @@
 
     },
     "Pause" : {
+
+    },
+    "permission requests" : {
 
     },
     "Permission requests" : {
@@ -887,6 +920,9 @@
     "Provider / service: %@" : {
 
     },
+    "provider model discovery" : {
+
+    },
     "Public availability can differ from your account and may change." : {
 
     },
@@ -923,19 +959,22 @@
     "Refresh" : {
 
     },
-    "Refresh ZDR model list" : {
-
-    },
     "Refresh automatically each week" : {
 
     },
     "Refresh models" : {
 
     },
+    "Refresh provider models" : {
+
+    },
     "Refresh providers" : {
 
     },
     "Refresh to load the model list." : {
+
+    },
+    "Refresh ZDR model list" : {
 
     },
     "Reload" : {
@@ -1049,45 +1088,6 @@
     "Running. Health has not been verified." : {
 
     },
-    "SSH alias or user@host" : {
-
-    },
-    "SSH and the launcher work, but the management service is stopped. Start the server with assistant server start." : {
-
-    },
-    "SSH connected, but this account cannot execute ~/.local/bin/assistant. Check the installed launcher's permissions." : {
-
-    },
-    "SSH connected, but ~/.local/bin/assistant is missing on the server. Install the Assistant server launcher for this SSH account." : {
-
-    },
-    "SSH could not reach this host and port. Check the server, network, and SSH port." : {
-
-    },
-    "SSH could not resolve this host. Check the destination or SSH configuration alias." : {
-
-    },
-    "SSH destination not provided" : {
-
-    },
-    "SSH did not become ready in time. Check server reachability and authentication." : {
-
-    },
-    "SSH discovery failed. Verify the host key and key/agent authentication in Terminal, then check the installed launcher and Docker access." : {
-
-    },
-    "SSH does not trust this host yet. Verify its fingerprint and establish host trust in Terminal before reconnecting." : {
-
-    },
-    "SSH has no route to this server. For a local-network server, allow Assistant in System Settings > Privacy & Security > Local Network, then reconnect. Also check the server address and network route." : {
-
-    },
-    "SSH key/agent authentication failed. Terminal may be using a password or prompting to unlock a key; this client cannot answer those prompts. Configure key authentication and load the key into your SSH agent." : {
-
-    },
-    "SSH port" : {
-
-    },
     "Safety & Approvals" : {
 
     },
@@ -1119,6 +1119,15 @@
 
     },
     "Save settings" : {
+
+    },
+    "Save the selected provider and credential before discovering its model list." : {
+
+    },
+    "Saved · Apply to activate" : {
+
+    },
+    "Saved · Needs applying" : {
 
     },
     "Saved and active" : {
@@ -1163,10 +1172,7 @@
     "Saved values awaiting activation" : {
 
     },
-    "Saved · Apply to activate" : {
-
-    },
-    "Saved · Needs applying" : {
+    "saved-settings activation review" : {
 
     },
     "Saved. Choose Review & Apply when you are ready." : {
@@ -1233,6 +1239,9 @@
 
     },
     "Sent externally" : {
+
+    },
+    "separate chats and reminder history" : {
 
     },
     "Server connection" : {
@@ -1325,13 +1334,52 @@
     "Source changes" : {
 
     },
+    "SSH alias or user@host" : {
+
+    },
+    "SSH and the launcher work, but the management service is stopped. Start the server with assistant server start." : {
+
+    },
+    "SSH connected, but ~/.local/bin/assistant is missing on the server. Install the Assistant server launcher for this SSH account." : {
+
+    },
+    "SSH connected, but this account cannot execute ~/.local/bin/assistant. Check the installed launcher's permissions." : {
+
+    },
+    "SSH could not reach this host and port. Check the server, network, and SSH port." : {
+
+    },
+    "SSH could not resolve this host. Check the destination or SSH configuration alias." : {
+
+    },
+    "SSH destination not provided" : {
+
+    },
+    "SSH did not become ready in time. Check server reachability and authentication." : {
+
+    },
+    "SSH discovery failed. Verify the host key and key/agent authentication in Terminal, then check the installed launcher and Docker access." : {
+
+    },
+    "SSH does not trust this host yet. Verify its fingerprint and establish host trust in Terminal before reconnecting." : {
+
+    },
+    "SSH has no route to this server. For a local-network server, allow Assistant in System Settings > Privacy & Security > Local Network, then reconnect. Also check the server address and network route." : {
+
+    },
+    "SSH key/agent authentication failed. Terminal may be using a password or prompting to unlock a key; this client cannot answer those prompts. Configure key authentication and load the key into your SSH agent." : {
+
+    },
+    "SSH port" : {
+
+    },
     "Start" : {
 
     },
-    "Start Assistant" : {
+    "Start a chat" : {
 
     },
-    "Start a chat" : {
+    "Start Assistant" : {
 
     },
     "Start deep research" : {
@@ -1356,6 +1404,15 @@
 
     },
     "Stop Assistant" : {
+
+    },
+    "Strict mode is fail-closed. Verify this provider account and add it to the verified ZDR provider list." : {
+
+    },
+    "Strict Zero Data Retention blocks custom OpenAI-compatible endpoints." : {
+
+    },
+    "structured settings" : {
 
     },
     "Submission details" : {
@@ -1451,22 +1508,16 @@
     "The server took too long to respond. It may be busy; try again shortly." : {
 
     },
-    "The server's SSH host key has changed. Verify the server's identity in Terminal; this client will not bypass host-key checking." : {
+    "The server’s receipt has expired. Check the affected item before taking any further action." : {
 
     },
-    "The server’s receipt has expired. Check the affected item before taking any further action." : {
+    "The server's SSH host key has changed. Verify the server's identity in Terminal; this client will not bypass host-key checking." : {
 
     },
     "These are connection settings, not a verified connection. Saving without applying does not start message processing." : {
 
     },
     "These changes have not been saved to the server." : {
-
-    },
-    "This Markdown file is not valid UTF-8 text." : {
-
-    },
-    "This PDF could not be opened. It may be damaged or encrypted." : {
 
     },
     "This attachment is no longer available for download." : {
@@ -1482,6 +1533,9 @@
 
     },
     "This discards only edits on this Mac. Settings already saved on the server are kept." : {
+
+    },
+    "This exact model is not in the administrator-verified ZDR model list." : {
 
     },
     "This file exceeds the %@ limit for this view." : {
@@ -1505,7 +1559,13 @@
     "This is not a permission request. Check the server’s receipts before trying the action again." : {
 
     },
+    "This Markdown file is not valid UTF-8 text." : {
+
+    },
     "This model setting’s editor is unavailable. Reload settings." : {
+
+    },
+    "This PDF could not be opened. It may be damaged or encrypted." : {
 
     },
     "This profile reached a different installation. Verify the server before creating a new profile." : {
@@ -1583,6 +1643,9 @@
     "Use default / Not set" : {
 
     },
+    "Verify AI Gateway logging, caching, and Logpush settings. Request headers do not disable Logpush." : {
+
+    },
     "Verify this destination with ssh in Terminal first. Unknown or changed host keys and interactive password prompts are not accepted." : {
 
     },
@@ -1616,6 +1679,9 @@
     "You" : {
 
     },
+    "You’re all caught up" : {
+
+    },
     "Your conversations will appear here." : {
 
     },
@@ -1623,9 +1689,6 @@
 
     },
     "Your server connection, service health, and diagnostics." : {
-
-    },
-    "You’re all caught up" : {
 
     },
     "ZDR-compatible models" : {
@@ -1641,30 +1704,6 @@
 
     },
     "Zoom out" : {
-
-    },
-    "live updates" : {
-
-    },
-    "macOS cannot play this media format or codec. Download it to use another player." : {
-
-    },
-    "macOS could not decode this image. It may be damaged or unsupported." : {
-
-    },
-    "model settings overview" : {
-
-    },
-    "permission requests" : {
-
-    },
-    "saved-settings activation review" : {
-
-    },
-    "separate chats and reminder history" : {
-
-    },
-    "structured settings" : {
 
     }
   },

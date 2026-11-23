@@ -8,6 +8,10 @@ struct SettingRow: View {
     var credentialStatusLoaded = false
     var modelCatalog: OpenRouterCatalog? = nil
     var modelPurpose: ModelPurpose? = nil
+    var providerModels: [ProviderModel]? = nil
+    var providerModelsLoading = false
+    var refreshProviderModels: (() async -> Void)? = nil
+    var eligibilityWarning: String? = nil
     var zdrOnly = false
     var choices: [String]? = nil
     @Binding var value: String
@@ -25,6 +29,11 @@ struct SettingRow: View {
             if let warning = field.warning {
                 Label(warning, systemImage: "exclamationmark.circle")
                     .font(.caption).foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let eligibilityWarning {
+                Label(eligibilityWarning, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -75,6 +84,11 @@ struct SettingRow: View {
         } else if let modelCatalog, let modelPurpose {
             ModelSelectionView(catalog: modelCatalog, purpose: modelPurpose, zdr: zdrOnly,
                                multiple: field.key == "AGENT_FUSION_ANALYSIS_MODELS", value: $value)
+        } else if ["AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_SECURITY_DEVELOPMENT_MODEL",
+                   "AGENT_DEEP_RESEARCH_MODEL"].contains(field.key), modelPurpose == nil,
+                  let refreshProviderModels {
+            ProviderModelSelectionView(models: providerModels ?? [], loading: providerModelsLoading,
+                                       refresh: refreshProviderModels, value: $value)
         } else if let choices = choices ?? field.choices {
             Picker(field.label, selection: $value) {
                 // Preserve an unavailable saved value without letting it become a new selection.

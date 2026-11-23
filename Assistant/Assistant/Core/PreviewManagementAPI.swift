@@ -282,6 +282,15 @@ actor PreviewManagementAPI: ManagementAPI {
                     ])
                 ])
             ])
+        } else if resource == "configuration/models" {
+            value = .object([
+                "provider": .string("openai"),
+                "models": .array([.object([
+                    "id": .string("gpt-4.1"), "name": .string("GPT-4.1")
+                ])]),
+                "zdr_only": .bool(true),
+                "warning": .string("Verify account eligibility."),
+            ])
         } else if resource == "configuration" || resource == "configuration/catalog" || resource.hasPrefix("configuration/settings") {
             value = .object([
                 "revision": .string(String(format: "%064d", configurationRevision)), "setup_complete": .bool(true),

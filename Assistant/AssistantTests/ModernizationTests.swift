@@ -1024,6 +1024,54 @@ final class ModernizationTests: XCTestCase {
         }
     }
 
+    /// Provider catalogs validate their route identity and never accept duplicate model IDs.
+    func testProviderModelCatalogValidatesProviderAndUniqueIdentifiers() throws {
+        let valid = ProviderModelCatalog(
+            provider: "anthropic",
+            models: [ProviderModel(id: "claude-sonnet-4-6", name: "Claude Sonnet")],
+            zdrOnly: true,
+            warning: "Verify account eligibility."
+        )
+        XCTAssertNoThrow(try valid.validate())
+        let duplicate = ProviderModelCatalog(
+            provider: "openai",
+            models: [
+                ProviderModel(id: "gpt-4.1", name: "GPT-4.1"),
+                ProviderModel(id: "gpt-4.1", name: "Duplicate"),
+            ],
+            zdrOnly: false,
+            warning: nil
+        )
+        XCTAssertThrowsError(try duplicate.validate())
+    }
+
+    /// Discovery requires the advertised server capability and decodes only provider model metadata.
+    @MainActor
+    func testProviderModelDiscoveryRequiresCapabilityAndDecodesCatalog() async throws {
+        let api = PreviewManagementAPI()
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: UUID().uuidString))
+        let unsupported = ClientModel(
+            defaults: defaults, api: api,
+            health: InstanceHealth(apiVersion: 2, instanceID: "catalog", name: "Assistant",
+                                   capabilities: [], readOnly: false)
+        )
+        do {
+            _ = try await unsupported.providerModelCatalog()
+            XCTFail("An unsupported server must explain the missing feature")
+        } catch {
+            XCTAssertEqual(error as? ClientError, .serverOutdated("provider model discovery"))
+        }
+        let model = ClientModel(
+            defaults: defaults, api: api,
+            health: InstanceHealth(apiVersion: 2, instanceID: "catalog", name: "Assistant",
+                                   capabilities: ["configuration.model-catalog"], readOnly: false)
+        )
+        let catalog = try await model.providerModelCatalog()
+        XCTAssertEqual(catalog.provider, "openai")
+        XCTAssertEqual(catalog.models.map(\.id), ["gpt-4.1"])
+        XCTAssertTrue(catalog.zdrOnly)
+    }
+
     /// Back and forward preserve subpage/search state, and a new visit abandons the forward branch.
     func testNavigationHistoryRestoresSettingsVisitsAndBranches() {
         let initial = SettingsLocation()

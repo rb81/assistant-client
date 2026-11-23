@@ -79,6 +79,62 @@ struct ProviderSelectionView: View {
     }
 }
 
+/// Native provider catalogs are fetched through the authenticated Management API.
+struct ProviderModelSelectionView: View {
+    let models: [ProviderModel]
+    let loading: Bool
+    let refresh: () async -> Void
+    @Binding var value: String
+    @State private var showing = false
+    @State private var search = ""
+
+    private var matches: [ProviderModel] {
+        models.filter { search.isEmpty || $0.name.localizedCaseInsensitiveContains(search) ||
+            $0.id.localizedCaseInsensitiveContains(search) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(value.isEmpty ? String(localized: "Choose a discovered model…") : value) {
+                showing.toggle()
+            }
+            .buttonStyle(.bordered)
+            .popover(isPresented: $showing) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Available provider models").font(.headline)
+                    TextField("Search models", text: $search)
+                    ScrollView {
+                        LazyVStack(alignment: .leading) {
+                            ForEach(matches) { model in
+                                Button {
+                                    value = model.id
+                                    showing = false
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(model.name)
+                                        Text(model.id).font(.caption).foregroundStyle(Theme.secondary)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(7)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            if matches.isEmpty {
+                                Text("No models match this search.").foregroundStyle(Theme.secondary).padding(8)
+                            }
+                        }
+                    }.frame(height: 280)
+                    Button("Refresh provider models", systemImage: "arrow.clockwise") {
+                        Task { await refresh() }
+                    }.disabled(loading)
+                    if loading { ProgressView("Loading models…") }
+                }.padding(16).frame(width: 440)
+            }
+            TextField("Or enter a model ID manually", text: $value)
+                .textFieldStyle(.roundedBorder)
+        }
+    }
+}
+
 /// Searchable, capability-filtered catalog choices preserve an unavailable saved ID without inventing substitutes.
 struct ModelSelectionView: View {
     let catalog: OpenRouterCatalog
@@ -202,5 +258,30 @@ struct ModelCatalogControls: View {
                     .font(.caption).foregroundStyle(Theme.secondary)
             }
         }
+
     }
 }
+
+#if DEBUG
+/// Preview uses deterministic provider identifiers and never contacts a live server.
+private struct ProviderModelSelectionPreview: View {
+    @State private var value = "claude-sonnet-4-6"
+    private let models = [
+        ProviderModel(id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6"),
+        ProviderModel(id: "claude-opus-4-6", name: "Claude Opus 4.6"),
+    ]
+
+    var body: some View {
+        ProviderModelSelectionView(models: models, loading: false, refresh: {}, value: $value)
+            .padding(24).frame(width: 520, alignment: .leading)
+    }
+}
+
+#Preview("Native model picker light") {
+    ProviderModelSelectionPreview().preferredColorScheme(.light)
+}
+
+#Preview("Native model picker dark") {
+    ProviderModelSelectionPreview().preferredColorScheme(.dark)
+}
+#endif

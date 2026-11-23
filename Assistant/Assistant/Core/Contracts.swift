@@ -320,6 +320,28 @@ struct ModelSettingsLink: Decodable, Identifiable, Sendable {
     var id: String { "\(destination):\(group)" }
 }
 
+/// Model identifiers discovered by the authenticated Management API without exposing provider credentials.
+struct ProviderModel: Decodable, Identifiable, Sendable {
+    let id: String
+    let name: String
+}
+
+/// A provider-scoped availability snapshot; it is advisory, never proof of account access.
+struct ProviderModelCatalog: Decodable, Sendable {
+    let provider: String
+    let models: [ProviderModel]
+    let zdrOnly: Bool
+    let warning: String?
+
+    func validate() throws {
+        let allowed = ["openrouter", "openai", "anthropic", "gemini", "cloudflare", "openai-compatible"]
+        guard allowed.contains(provider), Set(models.map(\.id)).count == models.count,
+              models.allSatisfy({ !$0.id.isEmpty && !$0.name.isEmpty }) else {
+            throw ClientError.malformedResponse
+        }
+    }
+}
+
 /// Server-owned sections keep model roles and advanced fields consistent across clients.
 struct ModelOverviewSection: Decodable, Identifiable, Sendable {
     let id: String

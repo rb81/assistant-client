@@ -38,6 +38,9 @@ struct ConfigurationView: View {
     @State private var showingReview = false
     @State private var modelAccess: [String: String] = [:]
     @State private var modelAccessLoaded = false
+    @State private var providerModelCatalog: ProviderModelCatalog?
+    @State private var providerModelCatalogError: String?
+    @State private var providerModelCatalogLoading = false
     @State private var modelOverview: ModelSettingsOverview?
     @State private var modelOverviewLoading = false
     @State private var modelOverviewError: String?
@@ -417,6 +420,10 @@ struct ConfigurationView: View {
                    credential: credentials.first { $0.name == field.key },
                    credentialStatusLoaded: credentialStatusLoaded,
                    modelCatalog: model.modelCatalog, modelPurpose: modelPurpose(field),
+                   providerModels: providerModels(field),
+                   providerModelsLoading: providerModelCatalogLoading,
+                   refreshProviderModels: { await loadProviderModels() },
+                   eligibilityWarning: modelEligibilityWarning(field),
                    zdrOnly: zdrOnly(field), choices: voiceChoices(field), value: binding(field))
             .disabled(ModelPurpose.forSetting(field.key) != nil && !modelAccessLoaded)
     }
@@ -440,6 +447,8 @@ struct ConfigurationView: View {
             let provider = effectiveValue("AGENT_SECURITY_DECISION_MODEL_PROVIDER")
             return provider == "openrouter" ? purpose : nil
         }
+        let provider = effectiveValue("AGENT_LLM_PROVIDER")
+        if !provider.isEmpty && !["auto", "openrouter"].contains(provider) { return nil }
         guard let url = URL(string: effectiveValue("AGENT_LLM_BASE_URL")),
               url.scheme?.lowercased() == "https", url.host?.lowercased() == "openrouter.ai" else { return nil }
         return purpose
@@ -448,6 +457,57 @@ struct ConfigurationView: View {
     private func zdrOnly(_ field: SettingField) -> Bool {
         effectiveValue("AGENT_LLM_ZDR_ONLY") == "true" ||
             (field.key.hasPrefix("AGENT_TTS_") && effectiveValue("AGENT_TTS_ZDR_ONLY") == "true")
+    }
+
+    private func modelEligibilityWarning(_ field: SettingField) -> String? {
+        guard ["AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_SECURITY_DEVELOPMENT_MODEL",
+               "AGENT_DEEP_RESEARCH_MODEL"].contains(field.key) else { return nil }
+        let provider = selectedModelProvider()
+        if let providerModelCatalogError { return providerModelCatalogError }
+        if let catalog = providerModelCatalog, catalog.provider == provider, let warning = catalog.warning {
+            return warning
+        }
+        if providerModelCatalog != nil, providerModelCatalog?.provider != provider {
+            return String(localized: "Save the selected provider and credential before discovering its model list.")
+        }
+        if provider == "gemini" {
+            return String(localized: "Gemini Developer API does not provide strict Zero Data Retention; strict mode blocks this route.")
+        }
+        if provider == "openai-compatible" && zdrOnly(field) {
+            return String(localized: "Strict Zero Data Retention blocks custom OpenAI-compatible endpoints.")
+        }
+        if provider == "cloudflare" {
+            return String(localized: "Verify AI Gateway logging, caching, and Logpush settings. Request headers do not disable Logpush.")
+        }
+        guard zdrOnly(field) else { return nil }
+        let verifiedProviders = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_PROVIDERS")
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
+        guard verifiedProviders.contains(provider) else {
+            return String(localized: "Strict mode is fail-closed. Verify this provider account and add it to the verified ZDR provider list.")
+        }
+        let model = effectiveValue(field.key).trimmingCharacters(in: .whitespaces)
+        let verifiedModels = Set(effectiveValue("AGENT_LLM_ZDR_VERIFIED_MODELS")
+            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
+        guard !model.isEmpty, verifiedModels.contains(provider + ":" + model) else {
+            return String(localized: "This exact model is not in the administrator-verified ZDR model list.")
+        }
+        if provider == "openrouter" {
+            return String(localized: "OpenRouter Safety Retention endpoints must also be excluded in account privacy settings or a guardrail.")
+        }
+        return nil
+    }
+
+    private func selectedModelProvider() -> String {
+        let configured = effectiveValue("AGENT_LLM_PROVIDER").lowercased()
+        if !configured.isEmpty && configured != "auto" { return configured }
+        switch URL(string: effectiveValue("AGENT_LLM_BASE_URL"))?.host?.lowercased() {
+        case "openrouter.ai": return "openrouter"
+        case "api.openai.com": return "openai"
+        case "api.anthropic.com": return "anthropic"
+        case "generativelanguage.googleapis.com": return "gemini"
+        case "api.cloudflare.com": return "cloudflare"
+        default: return "openai-compatible"
+        }
     }
 
     /// Extra accounts stay collapsed so one provider's spare slots do not bury the rest of the page.
@@ -650,6 +710,7 @@ struct ConfigurationView: View {
         modelOverview = nil; modelOverviewLoading = false; modelOverviewError = nil
         modelAccessLoaded = false
         modelAccess = [:]
+        providerModelCatalog = nil; providerModelCatalogError = nil; providerModelCatalogLoading = false
         busy = true
         defer { busy = false }
         do {
@@ -711,9 +772,41 @@ struct ConfigurationView: View {
                 return (key, value)
             })
             modelAccessLoaded = true
+            if selectedModelProvider() != "openrouter" {
+                await loadProviderModels()
+            }
         } catch {
             guard current == loadGeneration, !Task.isCancelled else { return }
             self.error = error.presentableMessage ?? self.error
+        }
+    }
+
+    private func providerModels(_ field: SettingField) -> [ProviderModel]? {
+        guard ["AGENT_LLM_MODEL", "AGENT_LLM_FALLBACK_MODEL", "AGENT_SECURITY_DEVELOPMENT_MODEL",
+               "AGENT_DEEP_RESEARCH_MODEL"].contains(field.key),
+              modelPurpose(field) == nil,
+              providerModelCatalog?.provider == selectedModelProvider() else { return nil }
+        return providerModelCatalog?.models
+    }
+
+    private func loadProviderModels() async {
+        guard modelAccessLoaded else { return }
+        let current = loadGeneration
+        providerModelCatalogLoading = true
+        defer { if current == loadGeneration { providerModelCatalogLoading = false } }
+        do {
+            let catalog = try await model.providerModelCatalog()
+            guard current == loadGeneration, !Task.isCancelled else { return }
+            guard catalog.provider == selectedModelProvider() else {
+                providerModelCatalog = nil
+                providerModelCatalogError = String(localized: "Save the selected provider and credential before discovering its model list.")
+                return
+            }
+            providerModelCatalog = catalog
+            providerModelCatalogError = nil
+        } catch {
+            guard current == loadGeneration, !Task.isCancelled else { return }
+            providerModelCatalogError = error.presentableMessage
         }
     }
 

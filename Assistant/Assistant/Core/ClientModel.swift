@@ -301,6 +301,17 @@ final class ClientModel {
         return overview
     }
 
+    /// Provider credentials remain on the server while the authenticated client requests model IDs.
+    func providerModelCatalog() async throws -> ProviderModelCatalog {
+        guard health?.capabilities.contains("configuration.model-catalog") == true else {
+            throw ClientError.serverOutdated(String(localized: "provider model discovery"))
+        }
+        let result = try await cachedRead("configuration/models", maxAge: 5 * 60)
+        let catalog = try Wire.decoder().decode(ProviderModelCatalog.self, from: JSONEncoder().encode(result))
+        try catalog.validate()
+        return catalog
+    }
+
     func prefetchSettingsMenu() async {
         guard health?.capabilities.contains("configuration.structured") == true else { return }
         do { _ = try await configurationCatalog() }
