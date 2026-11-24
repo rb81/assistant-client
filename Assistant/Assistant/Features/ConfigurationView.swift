@@ -488,7 +488,8 @@ struct ConfigurationView: View {
                    field.metadata?["selection"]?.string != "single" {
                     await loadSettingChoices(field)
                 }
-                guard modelPurpose(field) == nil, configuredProviderIDs.contains(provider),
+                guard usesProviderModelCatalog(field.key), modelPurpose(field) == nil,
+                      configuredProviderIDs.contains(provider),
                       !providerIsDisabled(provider) else { return }
                 await loadProviderModels(for: field)
             }
@@ -598,6 +599,9 @@ struct ConfigurationView: View {
            providerModelCatalogs[provider] == nil {
             return String(localized: "Load this provider's model list before saving a model selection.")
         }
+        if provider == "cloudflare-gateway" {
+            return String(localized: "Verify Unified Billing uses Cloudflare-managed credentials, not a stored provider key. Review Gateway logging, caching, and Logpush settings.")
+        }
         if provider == "cloudflare" {
             return String(localized: "Verify AI Gateway logging, caching, and Logpush settings. Request headers do not disable Logpush.")
         }
@@ -644,6 +648,7 @@ struct ConfigurationView: View {
             ("anthropic", "AGENT_LLM_ANTHROPIC_API_KEY"),
             ("gemini", "AGENT_LLM_GEMINI_API_KEY"),
             ("cloudflare", "AGENT_LLM_CLOUDFLARE_API_KEY"),
+            ("cloudflare-gateway", "AGENT_LLM_CLOUDFLARE_API_KEY"),
         ]
         let configured = credentialProviders.compactMap { savedNames.contains($0.1) ? $0.0 : nil }
         let customURL = effectiveValue("AGENT_PROVIDERS_OPENAI_COMPATIBLE_BASE_URL")

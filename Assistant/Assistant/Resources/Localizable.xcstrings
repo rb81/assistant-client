@@ -1776,6 +1776,9 @@
     "Verify AI Gateway logging, caching, and Logpush settings. Request headers do not disable Logpush." : {
 
     },
+    "Verify Unified Billing uses Cloudflare-managed credentials, not a stored provider key. Review Gateway logging, caching, and Logpush settings." : {
+
+    },
     "Verify this destination with ssh in Terminal first. Unknown or changed host keys and interactive password prompts are not accepted." : {
 
     },
