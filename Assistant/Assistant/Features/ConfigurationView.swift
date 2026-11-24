@@ -652,16 +652,14 @@ struct ConfigurationView: View {
         ]
         let configured = credentialProviders.compactMap { savedNames.contains($0.1) ? $0.0 : nil }
         let customURL = effectiveValue("AGENT_PROVIDERS_OPENAI_COMPATIBLE_BASE_URL")
+        let legacyCustomRoute = configuration?.settings.contains {
+            $0.key.hasPrefix("AGENT_MODEL_ROUTES_") && $0.key.hasSuffix("_PROVIDER") &&
+                effectiveValue($0.key).lowercased() == "openai-compatible"
+        } ?? false
         let hasCustomKey = savedNames.contains("AGENT_PROVIDERS_OPENAI_COMPATIBLE_API_KEY") ||
-            savedNames.contains("AGENT_LLM_OPENAI_API_KEY")
-        return orderedProviders(configured + (hasCustomKey && !customURL.isEmpty ? ["openai-compatible"] : []))
-    }
-
-    private func orderedProviders(_ values: [String]) -> [String] {
-        let available = Set(values)
-        let priority = effectiveValue("AGENT_PROVIDERS_PRIORITY")
-            .split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-        return priority.filter { available.contains($0) } + values.filter { !priority.contains($0) }
+            savedNames.contains("AGENT_LLM_OPENAI_API_KEY") ||
+            (legacyCustomRoute && savedNames.contains("AGENT_LLM_OPENROUTER_API_KEY"))
+        return configured + (hasCustomKey && !customURL.isEmpty ? ["openai-compatible"] : [])
     }
 
     private func isModelIdentifier(_ key: String) -> Bool {
@@ -708,6 +706,11 @@ struct ConfigurationView: View {
         if let key = modelProviderSetting(for: fieldKey) {
             let configured = effectiveValue(key).lowercased()
             if !configured.isEmpty && !["auto", "inherit"].contains(configured) { return configured }
+            if configured.isEmpty,
+               let field = configuration?.settings.first(where: { $0.key == key }),
+               !(field.metadata?["enum"]?.array?.compactMap(\.string).contains("inherit") ?? false) {
+                return ""
+            }
         }
         if fieldKey == "AGENT_SECURITY_DECISION_MODEL_PROVIDER" {
             return effectiveValue(fieldKey).lowercased()
