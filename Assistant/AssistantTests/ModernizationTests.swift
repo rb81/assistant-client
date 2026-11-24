@@ -1056,6 +1056,13 @@ final class ModernizationTests: XCTestCase {
             warning: "Verify account eligibility."
         )
         XCTAssertNoThrow(try valid.validate())
+        let gatewayData = Data("""
+            {"provider":"cloudflare-gateway","models":[{"id":"openai/gpt-4.1","name":"GPT-4.1"}],
+             "zdr_only":true,"warning":"Verify account eligibility."}
+            """.utf8)
+        let gateway = try Wire.decoder().decode(ProviderModelCatalog.self, from: gatewayData)
+        XCTAssertNoThrow(try gateway.validate())
+        XCTAssertEqual(gateway.models.map(\.id), ["openai/gpt-4.1"])
         let duplicate = ProviderModelCatalog(
             provider: "openai",
             models: [

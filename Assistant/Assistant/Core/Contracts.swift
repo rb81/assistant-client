@@ -334,7 +334,8 @@ struct ProviderModelCatalog: Decodable, Sendable {
     let warning: String?
 
     func validate() throws {
-        let allowed = ["openrouter", "openai", "anthropic", "gemini", "cloudflare", "openai-compatible"]
+        let allowed = ["openrouter", "openai", "anthropic", "gemini", "cloudflare", "cloudflare-gateway",
+                       "openai-compatible"]
         guard allowed.contains(provider), Set(models.map(\.id)).count == models.count,
               models.allSatisfy({ !$0.id.isEmpty && !$0.name.isEmpty }) else {
             throw ClientError.malformedResponse
