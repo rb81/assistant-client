@@ -22,6 +22,12 @@ connection without keeping a terminal open.
 | **Model settings** | Choose providers and models under **Settings > Models & Workflows**, including disabled features. **Providers & Privacy** has separate OpenRouter, OpenAI, Anthropic, Gemini, Cloudflare and OpenAI Compatible blocks with native endpoints prefilled. Privacy, hosting-provider and ordered fallback lists use selection controls. Changes use the same reviewed draft. |
 | **Live updates** | Receive resumable updates with polling fallback and optional macOS notifications while the app is open. |
 
+Model workflow settings also expose server-owned reasoning modes, effort and
+supported thinking-token budgets, with separate route sections. Catalog hints
+explain mandatory reasoning and distinguish effort from a hard token cap.
+Output capacity includes thinking and the visible answer; reviewed changes still
+require server activation.
+
 ## Download
 
 | Item | Details |

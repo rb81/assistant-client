@@ -129,6 +129,9 @@ struct ProviderModelSelectionView: View {
                     if loading { ProgressView("Loading models…") }
                 }.padding(16).frame(width: 440)
             }
+            if let reasoning = models.first(where: { $0.id == value })?.reasoning {
+                ModelReasoningSummary(reasoning: reasoning)
+            }
         }
     }
 }
@@ -182,6 +185,9 @@ struct ModelSelectionView: View {
                 Label("Zero Data Retention endpoints only", systemImage: "lock.shield")
                     .font(.caption).foregroundStyle(Theme.secondary)
             }
+            if !multiple, let reasoning = models.first(where: { $0.id == value })?.reasoning {
+                ModelReasoningSummary(reasoning: reasoning)
+            }
         }
         .task(id: zdr) { await catalog.refresh(zdr: zdr) }
     }
@@ -230,6 +236,20 @@ struct ModelSelectionView: View {
             Text("Catalog eligibility does not guarantee account access or current endpoint availability.")
                 .font(.caption).foregroundStyle(Theme.secondary)
         }.padding(16).frame(width: 440)
+    }
+}
+
+/// Capability hints explain why turning off thinking or setting a budget may be unavailable.
+private struct ModelReasoningSummary: View {
+    let reasoning: ModelReasoningCapabilities
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(reasoning.summary)
+            if reasoning.mandatory == true {
+                Text("This model requires reasoning and cannot turn it off.")
+            }
+        }.font(.caption).foregroundStyle(Theme.secondary)
     }
 }
 

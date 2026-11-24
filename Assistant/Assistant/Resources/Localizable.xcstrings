@@ -1,6 +1,36 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Reasoning effort is not a hard thinking-token cap." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reasoning effort is not a hard thinking-token cap."
+          }
+        }
+      }
+    },
+    "Supports a thinking-token budget within the total output cap." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supports a thinking-token budget within the total output cap."
+          }
+        }
+      }
+    },
+    "This model requires reasoning and cannot turn it off." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This model requires reasoning and cannot turn it off."
+          }
+        }
+      }
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {

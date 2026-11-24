@@ -324,6 +324,23 @@ struct ModelSettingsLink: Decodable, Identifiable, Sendable {
 struct ProviderModel: Decodable, Identifiable, Sendable {
     let id: String
     let name: String
+    var reasoning: ModelReasoningCapabilities? = nil
+}
+
+/// Advertised reasoning options distinguish effort from a supported thinking-token budget.
+struct ModelReasoningCapabilities: Codable, Sendable {
+    let supportedEfforts: [String]?
+    let supportsMaxTokens: Bool?
+    let mandatory: Bool?
+    let defaultEffort: String?
+    let defaultEnabled: Bool?
+
+    /// The total output cap remains separate even when a model supports a thinking-token budget.
+    var summary: String {
+        supportsMaxTokens == true
+            ? String(localized: "Supports a thinking-token budget within the total output cap.")
+            : String(localized: "Reasoning effort is not a hard thinking-token cap.")
+    }
 }
 
 /// A provider-scoped availability snapshot; it is advisory, never proof of account access.
