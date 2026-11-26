@@ -257,6 +257,9 @@
     "Back" : {
 
     },
+    "Blacklist sender" : {
+
+    },
     "Block always" : {
 
     },
@@ -1090,6 +1093,9 @@
 
     },
     "Refresh ZDR model list" : {
+
+    },
+    "Reject" : {
 
     },
     "Reload" : {

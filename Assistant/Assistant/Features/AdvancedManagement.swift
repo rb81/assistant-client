@@ -3,7 +3,7 @@ import SwiftUI
 /// Exact server decisions get clear labels without inventing approval options.
 enum ApprovalDecision: String, CaseIterable, Identifiable {
     case approve, deny, approveOnce = "approve_once", approveAlways = "approve_always"
-    case blockOnce = "block_once", blockAlways = "block_always", cancelJob = "cancel_job"
+    case blockOnce = "block_once", blockAlways = "block_always", cancelJob = "cancel_job", blacklist
     var id: String { rawValue }
 
     var title: String {
@@ -15,6 +15,7 @@ enum ApprovalDecision: String, CaseIterable, Identifiable {
         case .blockOnce: return String(localized: "Block once")
         case .blockAlways: return String(localized: "Block always")
         case .cancelJob: return String(localized: "Cancel task")
+        case .blacklist: return String(localized: "Blacklist sender")
         }
     }
 }
@@ -230,7 +231,10 @@ struct ApprovalsView: View {
                                 HStack {
                                     ForEach((approval["action"]?["decision_options"]?.array ?? [])
                                         .compactMap { $0.string.flatMap(ApprovalDecision.init(rawValue:)) }) { decision in
-                                        Button(decision.title) { decide(id, version, decision, approval) }
+                                        Button(decision == .deny && ["quarantined_email", "screened_email"].contains(approval["kind"]?.string ?? "")
+                                               ? String(localized: "Reject") : decision.title) {
+                                            decide(id, version, decision, approval)
+                                        }
                                             .buttonStyle(.bordered)
                                     }
                                 }

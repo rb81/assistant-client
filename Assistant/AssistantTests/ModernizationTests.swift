@@ -7,6 +7,12 @@ import XCTest
 
 /// Regression coverage for cached navigation, catalog policy, and chat presentation races.
 final class ModernizationTests: XCTestCase {
+    func testQuarantineBlacklistDecisionIsRecognized() {
+        XCTAssertEqual(ApprovalDecision(rawValue: "blacklist"), .blacklist)
+        XCTAssertEqual(ApprovalDecision.blacklist.title, String(localized: "Blacklist sender"))
+        XCTAssertNil(ApprovalDecision(rawValue: "unknown"))
+    }
+
     private var health: InstanceHealth {
         InstanceHealth(apiVersion: 2, instanceID: "modernization", name: "Nova",
                        capabilities: ["configuration.read"], readOnly: false)
